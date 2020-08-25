@@ -125,5 +125,26 @@ venv.bak/
 .dmypy.json
 dmypy.json
 
+.vscode
+*.swp
+
 # Pyre type checker
 .pyre/
+
+# pytest
+.pytest_cache
+
+# osx generated files
+.DS_Store
+.DS_Store?
+.Trashes
+ehthumbs.db
+Thumbs.db
+.idea
+
+# tools/trust-doc-nbs
+docs_src/.last_checked
+.last_checked
+.gitconfig
+*.log
+
