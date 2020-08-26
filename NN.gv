@@ -1,0 +1,55 @@
+digraph {
+	graph [rankdir=LR]
+	node [color=lightblue2 shape=circle style=filled]
+	subgraph l0 {
+		edge [style=invis]
+		rank=same style=dotted
+		x0 [label=<x<sub>0</sub>>]
+		x1 [label=<x<sub>1</sub>>]
+		x2 [label=<x<sub>2</sub>>]
+		xs [label=<&#8942;>]
+		xn [label=<x<sub>n</sub>>]
+		x0 -> x1
+		x1 -> x2
+		x2 -> xs
+		xs -> xn
+		label=input
+	}
+	subgraph l1 {
+		node [color=lightgrey]
+		edge [style=invis]
+		rank=same style=dotted
+		a0 [label=<a<sub>0</sub>>]
+		a1 [label=<a<sub>1</sub>>]
+		a2 [label=<a<sub>2</sub>>]
+		a3 [label=<a<sub>3</sub>>]
+		a0 -> a1
+		a1 -> a2
+		a2 -> a3
+		label="hidden 1"
+	}
+	subgraph w1 {
+		edge [style=solid]
+		concentrate=true overlap=true
+		x0 -> a0
+		x0 -> a1
+		x0 -> a2
+		x0 -> a3
+		x1 -> a0
+		x1 -> a1
+		x1 -> a2
+		x1 -> a3
+		x2 -> a0
+		x2 -> a1
+		x2 -> a2
+		x2 -> a3
+		xs -> a0
+		xs -> a1
+		xs -> a2
+		xs -> a3
+		xn -> a0
+		xn -> a1
+		xn -> a2
+		xn -> a3
+	}
+}
