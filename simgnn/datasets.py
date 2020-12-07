@@ -2,8 +2,9 @@ from os import path, listdir
 from glob import glob
 
 import torch
+import numpy as np
 from torch_geometric.data import Dataset, Data
-from simgnn.datautils import *
+from simgnn.datautils import load_array, load_graph
 
 dtype = torch.float32
 
