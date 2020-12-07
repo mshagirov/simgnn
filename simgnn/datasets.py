@@ -1,0 +1,113 @@
+from os import path, listdir
+from glob import glob
+
+import torch
+from torch_geometric.data import Dataset, Data
+from simgnn.datautils import *
+
+dtype = torch.float32
+
+class VertexDynamics(Dataset):
+    def __init__(self, root, window_size=5, transform=None, pre_transform=None):
+        '''
+        Assumes `root` dir contains folder named `raw` with all vertex dynamics simulation results
+        for tracing vertex trajectories, building graphs, and variables for computing edge tensions 
+        and cell pressures.
+        - Velocities are approximated as 1st order differences of positions `x` in subsequent frames:
+          `velocity(T+0) = x(T+1) - x(T+0)`.
+        - Use `pre_transform` for normalising and pre-processing dataset(s).
+        
+        Arg-s:
+        - root : path to a root directory that contains folder with raw dataset(s) in a folder named "raw".
+        Raw datasets should be placed into separate folders each containing outputs from a single simulation.
+        E.g. root contains ["raw", "processed", ...], and in folder "raw/" we should have ["simul1", "simul2", ...]
+        - window_size : number of past velocities to be used as node features 
+        `[x(T+0)-x(T-1), x(T-1)-x(T-2),..., x(T-window_size+1)-x(T-window_size)]`, where `x(T)` is node position at time `T`.
+        - transform :  transform(s) for graph datasets (e.g. from torch_geometric.transforms )
+        - pre_transform : transform(s) for data pre-processing (resulting graphs are saved in "preprocessed" folder)
+        and used as this dataset's sample graphs.
+        '''
+        self.raw_dir_path = path.join(root,'raw')
+        assert path.isdir(self.raw_dir_path), f'Folder "{root}" does not contain folder named "raw".'
+        
+        self.window_size = window_size
+        
+        super(VertexDynamics, self).__init__(root, transform, pre_transform)
+        # super's __init__ runs process() [and download() if defined].
+
+    @property
+    def raw_file_names(self):
+        raw_dirs = [folder_i for folder_i in listdir(self.raw_dir_path) 
+                    if path.isdir( path.join( self.raw_dir_path, folder_i))]
+        #file_names = [path.join(dir_i, file_i) for dir_i in raw_dirs
+        #              for file_i in listdir(path.join(self.raw_dir_path,dir_i))] 
+        return raw_dirs
+
+    @property
+    def processed_file_names(self):
+        '''
+        Return list of pytorch-geometric data files in `root/processed` folder (`self.processed_dir`).
+        '''
+        # "last_idx" : last index of window in "vertex velocity" (for features)
+        # last_idx=T-(2+window_size) --> num of processed frames: num_of_frames=last_idx+1 
+        nums_of_frames = [ (path.basename(raw_path),
+                            load_array(path.join(raw_path,'simul_t.npy')).shape[0]-(2+self.window_size)+1 
+                           ) for raw_path in self.raw_paths]
+        file_names = ['data_{}_{}.pt'.format(raw_path, t)
+                      for raw_path, tmax in nums_of_frames for t in range(tmax)]
+        return file_names
+
+    def process(self):
+        '''
+        Assumes that the parent class init runs _process() and initialises all the required dir-s.
+        '''
+        for raw_path in self.raw_paths:
+            # simulation instance in "raw_path"
+            # "window_size": number of previous velocities (node features)
+            # "last_idx" : last index of window in vx_vel (for features)
+            # last_idx=T-(2+window_size) --> num_of_frames=last_idx+1 
+            
+            # vertex trajectories:(Frames,Vertices,Dims)=TxNx2
+            vx_pos = load_array(path.join(raw_path,'simul_vtxpos.npy')) #TxNx2
+            vx_vel = np.diff(vx_pos,n=1,axis=0) # velocity(1st diff approx):(T-1)xNx2
+            
+            # T+0 vertex positions
+            node_pos = torch.from_numpy( vx_pos[self.window_size:-1]).type(dtype) # (num_of_frames)xNx2
+            
+            # T-1 to T-window_size velocities : (num_of_frames)xNx(window_size)x2
+            X_node = torch.from_numpy(np.stack([ vx_vel[k:k+self.window_size].transpose((1,0,2))
+                                                for k in range(vx_pos.shape[0]-(2+self.window_size)+1)])
+                                      ).type(dtype)
+            # T+0 vertex velocities
+            Y_node = torch.from_numpy(vx_vel[self.window_size:]).type(dtype) # (num_of_frames)xNx2
+            
+            # monolayer graph (topology)
+            mg_dict = load_graph(path.join(raw_path,'graph_dict.pkl'))
+            edges = torch.tensor(mg_dict['edges'],dtype=torch.long) # assume constant w.r.t "t"
+            edge_index =  torch.cat( [edges.T.contiguous(), edges.fliplr().T.contiguous()], axis=1)
+            
+            i = 0 # graph counter
+            sim_name = path.basename(raw_path) # folder name for the files
+            N_nodes = vx_pos.shape[1] # assume constant w.r.t. "t"
+            
+            for t in range(node_pos.size(0)):
+                data = Data(num_nodes = N_nodes,
+                            edge_index = edge_index,
+                            pos = node_pos[t],
+                            x = X_node[t],
+                            y = Y_node[t])
+
+                if self.pre_filter is not None and not self.pre_filter(data):
+                    continue
+
+                if self.pre_transform is not None:
+                    data = self.pre_transform(data)
+
+                torch.save(data, path.join(self.processed_dir, 'data_{}_{}.pt'.format(sim_name, t)))
+
+    def len(self):
+        return len(self.processed_file_names)
+
+    def get(self, idx):
+        data = torch.load( path.join( self.processed_dir, self.processed_file_names[idx]))
+        return data
