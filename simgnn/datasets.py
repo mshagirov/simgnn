@@ -8,6 +8,46 @@ from simgnn.datautils import load_array, load_graph
 
 dtype = torch.float32
 
+class CellData(Data):
+    '''Cell monolayer graph data object.'''
+    def __init__(self, y_cell=None, num_cells=None,
+                 node2cell_index=None, cell2node_index=None, **kwargs):
+        super(CellData, self).__init__(**kwargs)
+        self.node2cell_index = node2cell_index
+        self.cell2node_index = cell2node_index
+        self.y_cell = y_cell
+        self.__num_cells__ = num_cells
+    
+    @property
+    def num_cells(self):
+        if self.__num_cells__!=None:
+            return self.__num_cells__
+        if self.node2cell_index!=None:
+            print('Number of cells is inferred from `node2cell_index`!')
+            return self.node2cell_index[1].max()+1
+        if self.cell2node_index!=None:
+            print('Number of cells is inferred from `cell2node_index`!')
+            return self.cell2node_index[0].max()+1
+    
+    @num_cells.setter
+    def num_cells(self,val):
+        self.__num_cells__ = val
+        
+    def __inc__(self, key, value):
+        if key == 'node2cell_index':
+            return torch.tensor([[self.num_nodes], [self.num_cells]])
+        if key == 'cell2node_index':
+            return torch.tensor([[self.num_cells], [self.num_nodes]])
+        else:
+            return super(CellData, self).__inc__(key, value)
+    
+    def __cat_dim__(self, key, value):
+        if key == 'node2cell_index' or key == 'cell2node_index':
+            return -1
+        else:
+            return super(CellData, self).__cat_dim__(key, value)
+
+
 class VertexDynamics(Dataset):
     def __init__(self, root, window_size=5, transform=None, pre_transform=None):
         '''
