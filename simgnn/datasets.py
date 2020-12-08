@@ -9,7 +9,7 @@ from simgnn.datautils import load_array, load_graph
 dtype = torch.float32
 
 class CellData(Data):
-    '''Cell monolayer graph data object.'''
+    '''Cell monolayer graph data object. Same as `Data` but with cells.'''
     def __init__(self, y_cell=None, num_cells=None,
                  node2cell_index=None, cell2node_index=None, **kwargs):
         super(CellData, self).__init__(**kwargs)
