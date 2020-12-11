@@ -100,7 +100,9 @@ class VertexDynamics(Dataset):
 
     def process(self):
         '''
-        Assumes that the parent class init runs _process() and initialises all the required dir-s.
+        Assumptions:
+        - the parent class init runs _process() and initialises all the required dir-s.
+        - 
         '''
         for raw_path in self.raw_paths:
             # simulation instance in "raw_path"
@@ -125,25 +127,27 @@ class VertexDynamics(Dataset):
             # monolayer graph (topology)
             mg_dict = load_graph(path.join(raw_path,'graph_dict.pkl'))
             edges = torch.tensor(mg_dict['edges'],dtype=torch.long) # assume constant w.r.t "t"
-            edge_index =  torch.cat( [edges.T.contiguous(), edges.fliplr().T.contiguous()], axis=1)
+            edge_index = torch.cat( [edges.T.contiguous(), edges.fliplr().T.contiguous()], axis=1)
+            cell2node_index = self.cell2edge(edges=edges, cells=mg_dict["cells"]) # cell_id-node_id pairs
+            node2cell_index = cell2node_index[[1,0]].contiguous() # node_id-cell_id pairs
             
-            i = 0 # graph counter
             sim_name = path.basename(raw_path) # folder name for the files
             N_nodes = vx_pos.shape[1] # assume constant w.r.t. "t"
+            N_cells = len(mg_dict["cells"]) # num_of_cells assume constant w.r.t. "t"
             
             for t in range(node_pos.size(0)):
-                data = Data(num_nodes = N_nodes,
-                            edge_index = edge_index,
-                            pos = node_pos[t],
-                            x = X_node[t],
-                            y = Y_node[t])
-
+                data = CellData(num_nodes = N_nodes,
+                                num_cells = N_cells,
+                                edge_index = edge_index,
+                                node2cell_index = node2cell_index,
+                                cell2node_index = cell2node_index,
+                                pos = node_pos[t],
+                                x = X_node[t],
+                                y = Y_node[t])
                 if self.pre_filter is not None and not self.pre_filter(data):
                     continue
-
                 if self.pre_transform is not None:
                     data = self.pre_transform(data)
-
                 torch.save(data, path.join(self.processed_dir, 'data_{}_{}.pt'.format(sim_name, t)))
 
     def len(self):
@@ -152,3 +156,17 @@ class VertexDynamics(Dataset):
     def get(self, idx):
         data = torch.load( path.join( self.processed_dir, self.processed_file_names[idx]))
         return data
+    
+    @staticmethod
+    def cell2edge(edges=None, cells=None):
+        '''
+        - edges: source-target vertex index pairs of directed edges (i.e. single copy of each edge in a graph)
+        - cells: cells dict, cell indices (0...N_cells-1):int as keys and shifted edge indices (1..N_edges):int as values.
+        Edges in cells must be ordered in order of their connection, indexing starts from 1 with negative indices indicating 
+        reversed order of vertices e.g. e[ID]=(v1,v2) and e[-ID]=(v2,v1). Edge indices in cells:`cells[ci]= [ID,...]` are 
+        converted to indices in "edges" tensor with `edge_ID=np.abs(ID)-1` ==> `(v1,v2) = edges[edge_ID]`, and order of the
+        vertices is inferred from sign of `np.sign(ID)`: if 1 =>(v1,v2), elif -1 =>(v2,v1).
+        '''
+        return torch.cat([torch.stack( [torch.empty( len(cells[ci]), dtype=edges.dtype).fill_(ci),
+                                       edges[np.abs(cells[ci])-1,np.sign(np.sign(cells[ci])-1)] ], dim=0)
+                          for ci in cells ], dim=-1)
