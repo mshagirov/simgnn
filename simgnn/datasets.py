@@ -102,7 +102,7 @@ class VertexDynamics(Dataset):
         '''
         Assumptions:
         - the parent class init runs _process() and initialises all the required dir-s.
-        - 
+        - cell graph topology and number of nodes is constant w.r.t. to frames.
         '''
         for raw_path in self.raw_paths:
             # simulation instance in "raw_path"
@@ -133,8 +133,7 @@ class VertexDynamics(Dataset):
             
             sim_name = path.basename(raw_path) # folder name for the files
             N_nodes = vx_pos.shape[1] # assume constant w.r.t. "t"
-            N_cells = len(mg_dict["cells"]) # num_of_cells assume constant w.r.t. "t"
-            
+            N_cells = max(mg_dict['cells'].keys()) # num_of_cells assume constant w.r.t. "t"
             for t in range(node_pos.size(0)):
                 data = CellData(num_nodes = N_nodes,
                                 num_cells = N_cells,
