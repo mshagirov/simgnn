@@ -110,29 +110,23 @@ class VertexDynamics(Dataset):
             # "last_idx" : last index of window in vx_vel (for features)
             # last_idx=T-(2+window_size) --> num_of_frames=last_idx+1 
             
-            # vertex trajectories:(Frames,Vertices,Dims)=TxNx2
-            vx_pos = load_array(path.join(raw_path,'simul_vtxpos.npy')) #TxNx2
-            vx_vel = np.diff(vx_pos,n=1,axis=0) # velocity(1st diff approx):(T-1)xNx2
-            
-            # T+0 vertex positions
-            node_pos = torch.from_numpy( vx_pos[self.window_size:-1]).type(dtype) # (num_of_frames)xNx2
-            
-            # T-1 to T-window_size velocities : (num_of_frames)xNx(window_size)x2
-            X_node = torch.from_numpy(np.stack([ vx_vel[k:k+self.window_size].transpose((1,0,2))
-                                                for k in range(vx_pos.shape[0]-(2+self.window_size)+1)])
-                                      ).type(dtype)
-            # T+0 vertex velocities
-            Y_node = torch.from_numpy(vx_vel[self.window_size:]).type(dtype) # (num_of_frames)xNx2
-            
+            # Load node positions from raw_path and convert to node attrib-s and targets.
+            node_pos, X_node, Y_node = self.pos2nodeXY(pos_path = path.join(raw_path,'simul_vtxpos.npy'),
+                                                       window_size = self.window_size,
+                                                       dtype = dtype)
             # monolayer graph (topology)
             mg_dict = load_graph(path.join(raw_path,'graph_dict.pkl'))
+            
+            # edge indices 
             edges = torch.tensor(mg_dict['edges'],dtype=torch.long) # assume constant w.r.t "t"
             edge_index = torch.cat( [edges.T.contiguous(), edges.fliplr().T.contiguous()], axis=1)
+            
+            # cell-to-node and node-to-cell "edge indices"
             cell2node_index = self.cell2edge(edges=edges, cells=mg_dict["cells"]) # cell_id-node_id pairs
             node2cell_index = cell2node_index[[1,0]].contiguous() # node_id-cell_id pairs
             
             sim_name = path.basename(raw_path) # folder name for the files
-            N_nodes = vx_pos.shape[1] # assume constant w.r.t. "t"
+            N_nodes = node_pos.size(1) # assume constant w.r.t. "t"
             N_cells = max(mg_dict['cells'].keys()) # num_of_cells assume constant w.r.t. "t"
             for t in range(node_pos.size(0)):
                 data = CellData(num_nodes = N_nodes,
@@ -169,3 +163,36 @@ class VertexDynamics(Dataset):
         return torch.cat([torch.stack( [torch.empty( len(cells[ci]), dtype=edges.dtype).fill_(ci),
                                        edges[np.abs(cells[ci])-1,np.sign(np.sign(cells[ci])-1)] ], dim=0)
                           for ci in cells ], dim=-1)
+    @staticmethod
+    def pos2nodeXY(pos_path=None, window_size=None, dtype=dtype):
+        '''
+        Load 'simul_vtxpos.npy' and pre-process it into windowed data of velocities (1st differences);
+         
+        - pos_path: path to vertex positions file 'simul_vtxpos.npy' containing an array with shape `(frames)xNx2`.
+        - window_size: number of past velocities to be used as node features (*see `__init__`* method)
+        - dtype: default `torch.float32`
+        
+        Returns:
+        - node_pos: node positions : shape (num_of_frames)xNx2
+        - X_node: node velocities ordered from `T-window_size` to `T-1` : shape (num_of_frames)xNx(window_size)x2
+        - Y_node : `T+0` vertex velocities : shape (num_of_frames)xNx2
+        
+        where `num_of_frames=last_idx+1`, and `last_idx=frames-(2+window_size)` is the last index of window
+        in vx_vel (full array of 1st differences of the node positions with "frames-1" number of frames, 
+        i.e. vx_pos.shape[0]==frames).
+        '''
+        # vertex trajectories:(Frames,Vertices,Dims)=TxNx2
+        vx_pos = load_array(pos_path) #TxNx2
+        vx_vel = np.diff(vx_pos,n=1,axis=0) # velocity(1st diff approx):(T-1)xNx2
+
+        # T+0 vertex positions
+        node_pos = torch.from_numpy( vx_pos[window_size:-1]).type(dtype) # (num_of_frames)xNx2
+
+        # (T-window_size) to (T-1) velocities : (num_of_frames)xNx(window_size)x2
+        X_node = torch.from_numpy(np.stack([ vx_vel[k:k+window_size].transpose((1,0,2))
+                                            for k in range(vx_pos.shape[0]-(2+window_size)+1)])
+                                  ).type(dtype)
+        # T+0 vertex velocities
+        Y_node = torch.from_numpy(vx_vel[window_size:]).type(dtype) # (num_of_frames)xNx2
+        return node_pos, X_node, Y_node
+            
