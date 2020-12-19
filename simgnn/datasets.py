@@ -108,12 +108,14 @@ class VertexDynamics(Dataset):
             # simulation instance in "raw_path"
             # "window_size": number of previous velocities (node features)
             # "last_idx" : last index of window in vx_vel (for features)
-            # last_idx=T-(2+window_size) --> num_of_frames=last_idx+1 
+            # last_idx=T-(2+window_size) --> num_of_frames=last_idx+1
+            
+            Area, A0, Ka = self.load_area_vars(area_path = path.join(raw_path, 'simul_Area.npy'),
+                                               a0_path = path.join(raw_path, 'simul_A0.npy'),
+                                               ka_path = path.join(raw_path, 'simul_Ka.npy'))
             
             # Load node positions from raw_path and convert to node attrib-s and targets.
-            node_pos, X_node, Y_node = self.pos2nodeXY(pos_path = path.join(raw_path,'simul_vtxpos.npy'),
-                                                       window_size = self.window_size,
-                                                       dtype = dtype)
+            node_pos, X_node, Y_node = self.pos2nodeXY(pos_path = path.join(raw_path,'simul_vtxpos.npy') )
             # monolayer graph (topology)
             mg_dict = load_graph(path.join(raw_path,'graph_dict.pkl'))
             
@@ -150,29 +152,13 @@ class VertexDynamics(Dataset):
         data = torch.load( path.join( self.processed_dir, self.processed_file_names[idx]))
         return data
     
-    @staticmethod
-    def cell2edge(edges=None, cells=None):
+    def pos2nodeXY(self, pos_path=None):
         '''
-        - edges: source-target vertex index pairs of directed edges (i.e. single copy of each edge in a graph)
-        - cells: cells dict, cell indices (0...N_cells-1):int as keys and shifted edge indices (1..N_edges):int as values.
-        Edges in cells must be ordered in order of their connection, indexing starts from 1 with negative indices indicating 
-        reversed order of vertices e.g. e[ID]=(v1,v2) and e[-ID]=(v2,v1). Edge indices in cells:`cells[ci]= [ID,...]` are 
-        converted to indices in "edges" tensor with `edge_ID=np.abs(ID)-1` ==> `(v1,v2) = edges[edge_ID]`, and order of the
-        vertices is inferred from sign of `np.sign(ID)`: if 1 =>(v1,v2), elif -1 =>(v2,v1).
-        '''
-        return torch.cat([torch.stack( [torch.empty( len(cells[ci]), dtype=edges.dtype).fill_(ci),
-                                       edges[np.abs(cells[ci])-1,np.sign(np.sign(cells[ci])-1)] ], dim=0)
-                          for ci in cells ], dim=-1)
-    @staticmethod
-    def pos2nodeXY(pos_path=None, window_size=None, dtype=dtype):
-        '''
-        Load 'simul_vtxpos.npy' and pre-process it into windowed data of velocities (1st differences);
+        Load 'simul_vtxpos.npy' and pre-process it into windowed data of velocities (1st differences) using `self.window_size` as the number of past velocities as node features.
          
-        - pos_path: path to vertex positions file 'simul_vtxpos.npy' containing an array with shape `(frames)xNx2`.
-        - window_size: number of past velocities to be used as node features (*see `__init__`* method)
-        - dtype: default `torch.float32`
+        - pos_path: path to vertex positions file, e.g. 'simul_vtxpos.npy', containing an array with shape `(frames)xNx2`.
         
-        Returns:
+        Returns: {dtype : `torch.float32`}
         - node_pos: node positions : shape (num_of_frames)xNx2
         - X_node: node velocities ordered from `T-window_size` to `T-1` : shape (num_of_frames)xNx(window_size)x2
         - Y_node : `T+0` vertex velocities : shape (num_of_frames)xNx2
@@ -186,13 +172,41 @@ class VertexDynamics(Dataset):
         vx_vel = np.diff(vx_pos,n=1,axis=0) # velocity(1st diff approx):(T-1)xNx2
 
         # T+0 vertex positions
-        node_pos = torch.from_numpy( vx_pos[window_size:-1]).type(dtype) # (num_of_frames)xNx2
+        node_pos = torch.from_numpy( vx_pos[self.window_size:-1]).type(dtype) # (num_of_frames)xNx2
 
         # (T-window_size) to (T-1) velocities : (num_of_frames)xNx(window_size)x2
-        X_node = torch.from_numpy(np.stack([ vx_vel[k:k+window_size].transpose((1,0,2))
-                                            for k in range(vx_pos.shape[0]-(2+window_size)+1)])
+        X_node = torch.from_numpy(np.stack([ vx_vel[k:k+self.window_size].transpose((1,0,2))
+                                            for k in range(vx_pos.shape[0]-(2+self.window_size)+1)])
                                   ).type(dtype)
         # T+0 vertex velocities
-        Y_node = torch.from_numpy(vx_vel[window_size:]).type(dtype) # (num_of_frames)xNx2
+        Y_node = torch.from_numpy(vx_vel[self.window_size:]).type(dtype) # (num_of_frames)xNx2
         return node_pos, X_node, Y_node
-            
+    
+    def cell2edge(self, edges=None, cells=None):
+        '''
+        - edges: source-target vertex index pairs of directed edges (i.e. single copy of each edge in a graph)
+        - cells: cells dict, cell indices (0...N_cells-1):int as keys and shifted edge indices (1..N_edges):int as values.
+        Edges in cells must be ordered in order of their connection, indexing starts from 1 with negative indices indicating 
+        reversed order of vertices e.g. e[ID]=(v1,v2) and e[-ID]=(v2,v1). Edge indices in cells:`cells[ci]= [ID,...]` are 
+        converted to indices in "edges" tensor with `edge_ID=np.abs(ID)-1` ==> `(v1,v2) = edges[edge_ID]`, and order of the
+        vertices is inferred from sign of `np.sign(ID)`: if 1 =>(v1,v2), elif -1 =>(v2,v1).
+        '''
+        return torch.cat([torch.stack( [torch.empty( len(cells[ci]), dtype=edges.dtype).fill_(ci),
+                                       edges[np.abs(cells[ci])-1,np.sign(np.sign(cells[ci])-1)] ], dim=0)
+                          for ci in cells ], dim=-1)
+    
+    def load_area_vars(self, area_path=None,a0_path=None,ka_path=None):
+        '''Load numpy arrays from cell `Area`, target/equilibrium area `A0`, and "spring" constant `Ka` files.'''
+        return load_array(area_path), load_array(a0_path), load_array(ka_path)
+    
+    def cell_pressures(self, Area=None, A0=None, Ka=None):
+        '''
+        Computes cell pressures `press_c = -2*Ka*(A-A0)` for each cell.
+        - Area : cell areas w/ shape Frames x Cells
+        - A0 : equilibrium areas w/ shape Frames x Cells or (Frames,)
+        - Ka : area "spring constants" w/ shape Frames x Cells or (Frames,)
+        
+        Rerturns: cell pressures `press_c` w/ shape Frames x Cells
+        '''
+        return -2*Ka.reshape(Area.shape[0],-1)*(Area.reshape(Area.shape[0],-1) - A0.reshape(Area.shape[0],-1))
+
