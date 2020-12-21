@@ -107,18 +107,25 @@ class VertexDynamics(Dataset):
         for raw_path in self.raw_paths:
             # simulation instance in "raw_path"
             
-            # T+0 Cell pressures (torch.Tensor)
+            # monolayer graph (topology)
+            mg_dict = load_graph(path.join(raw_path,'graph_dict.pkl'))
+            
+            # Load node positions from raw_path and convert to (windowed) node attrib-s and targets.
+            node_pos, X_node, Y_node = self.pos2nodeXY(pos_path = path.join(raw_path,'simul_vtxpos.npy') )
+            
+            # T+0 Cell pressures
             cell_presrs = self.cell_pressures(area_path = path.join(raw_path, 'simul_Area.npy'),
                                               a0_path = path.join(raw_path, 'simul_A0.npy'),
                                               ka_path = path.join(raw_path, 'simul_Ka.npy'))
             
-            # Load node positions from raw_path and convert to node attrib-s and targets.
-            node_pos, X_node, Y_node = self.pos2nodeXY(pos_path = path.join(raw_path,'simul_vtxpos.npy') )
+            # T+0 Edge tensions
+            edge_tensns = self.edge_tensions(mg_dict = mg_dict,
+                                             lambdaij_path = path.join(raw_path,'simul_Lambda_ij.npy'),
+                                             perim_path = path.join(raw_path, 'simul_Perimeter.npy'),
+                                             p0_path = path.join(raw_path, 'simul_P0.npy'),
+                                             kp_path = path.join(raw_path, 'simul_Kp.npy') )
             
-            # monolayer graph (topology)
-            mg_dict = load_graph(path.join(raw_path,'graph_dict.pkl'))
-            
-            # edge indices 
+            # edge indices
             edges = torch.tensor(mg_dict['edges'],dtype=torch.long) # assume constant w.r.t "t"
             edge_index = torch.cat( [edges.T.contiguous(), edges.fliplr().T.contiguous()], axis=1)
             
@@ -136,14 +143,15 @@ class VertexDynamics(Dataset):
                                 edge_index = edge_index,
                                 node2cell_index = node2cell_index, cell2node_index = cell2node_index,
                                 pos = node_pos[t], x = X_node[t], y = Y_node[t],
-                                cell_pressures = cell_presrs[t]
+                                cell_pressures = cell_presrs[t],
+                                edge_tensions = edge_tensns[t]
                                )
                 if self.pre_filter is not None and not self.pre_filter(data):
                     continue
                 if self.pre_transform is not None:
                     data = self.pre_transform(data)
                 torch.save(data, path.join(self.processed_dir, 'data_{}_{}.pt'.format(sim_name, t)))
-
+    
     def len(self):
         return len(self.processed_file_names)
 
@@ -153,7 +161,8 @@ class VertexDynamics(Dataset):
     
     def pos2nodeXY(self, pos_path=None):
         '''
-        Load 'simul_vtxpos.npy' and pre-process it into windowed data of velocities (1st differences) using `self.window_size` number of past velocities (frames) as node features.
+        Load 'simul_vtxpos.npy' and pre-process it into windowed data of velocities (1st differences) using 
+        `self.window_size` number of past velocities (frames) as node features.
          
         - pos_path: path to vertex positions file, e.g. 'simul_vtxpos.npy', containing an array with shape `(frames)xNx2`.
         
@@ -162,7 +171,8 @@ class VertexDynamics(Dataset):
         - X_node: node velocities ordered from `T-window_size` to `T-1` : shape (num_of_frames)xNx(window_size)x2
         - Y_node : `T+0` vertex velocities : shape (num_of_frames)xNx2
         
-        Where the `num_of_frames=last_idx+1`, and `last_idx=frames-(2+window_size)` is the last index of window in vx_vel (full array of 1st differences of the node positions with "frames-1" number of frames, i.e. vx_pos.shape[0]==frames).
+        Where the `num_of_frames=last_idx+1`, and `last_idx=frames-(2+window_size)` is the last index of window in vx_vel 
+        (full array of 1st differences of the node positions with "frames-1" number of frames, i.e. vx_pos.shape[0]==frames).
         '''
         # vertex trajectories:(Frames,Vertices,Dims)=TxNx2
         vx_pos = load_array(pos_path) #TxNx2
@@ -183,7 +193,10 @@ class VertexDynamics(Dataset):
         '''
         - edges: source-target vertex index pairs of directed edges (i.e. single copy of each edge in a graph)
         - cells: cells dict, cell indices (0...N_cells-1):int as keys and shifted edge indices (1..N_edges):int as values.
-        Edges in cells must be ordered in order of their connection, indexing starts from 1 with negative indices indicating reversed order of vertices e.g. e[ID]=(v1,v2) and e[-ID]=(v2,v1). Edge indices in cells:`cells[ci]= [ID,...]` are converted to node (vertex) indices in "edges" tensor with `edge_ID=np.abs(ID)-1` ==> `(v1,v2) = edges[edge_ID]`, and order of the vertices is inferred from sign of `np.sign(ID)`: if 1 =>(v1,v2), elif -1 =>(v2,v1).
+        Edges in cells must be ordered in order of their connection, indexing starts from 1 with negative indices indicating
+        reversed order of vertices e.g. e[ID]=(v1,v2) and e[-ID]=(v2,v1). Edge indices in cells:`cells[ci]= [ID,...]` are
+        converted to node (vertex) indices in "edges" tensor with `edge_ID=np.abs(ID)-1` ==> `(v1,v2) = edges[edge_ID]`, and 
+        order of the vertices is inferred from sign of `np.sign(ID)`: if 1 =>(v1,v2), elif -1 =>(v2,v1).
         '''
         return torch.cat([torch.stack( [torch.empty( len(cells[ci]), dtype=edges.dtype).fill_(ci),
                                        edges[np.abs(cells[ci])-1,np.sign(np.sign(cells[ci])-1)] ], dim=0)
@@ -191,13 +204,18 @@ class VertexDynamics(Dataset):
     
     def cell_pressures(self, area_path=None,a0_path=None,ka_path=None):
         '''
-        Load numpy arrays from cell `Area`, target/equilibrium area `A0`, and "spring" constant `Ka` "*.npy" files, and pre-process these var-s as windowed data, and then computes cell pressures using these arrays. `press_c = -2*Ka*(A-A0)` for each cell.
+        Load numpy arrays from cell `Area`, target/equilibrium area `A0`, and "spring" constant `Ka` "*.npy" files, and
+        pre-process these var-s as windowed data, and then computes cell pressures using these arrays.
+        `press_c = -2*Ka*(A-A0)` for each cell.
+        
         - area_path : cell areas w/ shape Frames x Cells
         - a0_path : equilibrium areas w/ shape Frames x Cells or (Frames,)
         - ka_path : area "spring constants" w/ shape Frames x Cells or (Frames,)
         
         Rerturns: {torch.Tensor, dtype:`torch.float32`}
-        - cell_presrs : cell pressures w/ shape (num_of_frames)xCells, where the `num_of_frames=last_idx+1`, and `last_idx=Frames-(2+window_size)` is the last index of window in `vx_vel` (full array of 1st differences of the node positions with `Frames-1` number of frames, i.e. `vx_pos.shape[0]==Frames`).
+        - cell_presrs : cell pressures w/ shape (num_of_frames)xCells, where the `num_of_frames=last_idx+1`, and 
+        `last_idx=Frames-(2+window_size)` is the last index of window in `vx_vel` (full array of 1st differences of the node 
+        positions with `Frames-1` number of frames, i.e. `vx_pos.shape[0]==Frames`).
         '''
         Area = load_array(area_path)[self.window_size:-1]
         A0 = load_array(a0_path)[self.window_size:-1]
@@ -205,3 +223,44 @@ class VertexDynamics(Dataset):
         
         cell_presrs = -2.0*Ka.reshape(Area.shape[0],-1)*(Area.reshape(Area.shape[0],-1) - A0.reshape(Area.shape[0],-1))
         return torch.from_numpy(cell_presrs).type(dtype)
+    
+    def edge_tensions(self, mg_dict=None, lambdaij_path=None, perim_path=None, p0_path=None, kp_path=None):
+        '''
+        - mg_dict : monolayer graph dict will cells and edges (from `graph_dict.pkl` file).
+        - lambdaij_path : location of `Lambda_ij` "*.npy" file that contains an numpy array w/ shape
+        Frames x Edges x 1, or Frames x Edges.
+        - perim_path : location of a file with cell `Perimeters` numpy array w/ shape Frames x Cells x 1, or Frames x Cells.
+        - p0_path : location of cell equilibrium perimeters `P0` array w/ shape (Frames,) or same shape as `Perimeters` array.
+        - kp_path : location of cell perimeter "spring" constants, an array w/ shape (Frames,) or same shape as
+        `Perimeters` array.
+        
+        Returns : {torch.Tensor, dtype:`torch.float32`}
+        - tensions : edge tensions w/ shape (num_of_frames)xEdges (how to compute "num_of_frames": 
+        see docs for `VertexDynamics.cell_pressures()`)
+        '''
+        # dict of cells sharing edges (neighbours)
+        edge_cells={ei:[] for ei in range( len( mg_dict['edges'])) }
+        for ci in mg_dict['cells']:
+            for ei in np.abs(mg_dict['cells'][ci])-1:
+                edge_cells[ei].append(ci)
+        
+        # Compute membrane tension (depends only on cell perimeter var-s)
+        #
+        Perims = load_array(perim_path)[self.window_size:-1]
+        P0 = load_array(p0_path)[self.window_size:-1]
+        Kp = load_array(kp_path)[self.window_size:-1]
+        
+        # compute cell-wise membrane tensions
+        membrn_cells = Kp.reshape(Perims.shape[0],-1)*(Perims.reshape(Perims.shape[0],-1) - P0.reshape(Perims.shape[0],-1) )
+        
+        # edge-wise sum of membrane tensions
+        membrn_edge = np.concatenate([membrn_cells[:, edge_cells[ei]].sum(axis=1, keepdims=True)
+                                      for ei in edge_cells], axis=1)
+        
+        # active tension due to (edge) contractility
+        Lambda_ij = load_array(lambdaij_path)[self.window_size:-1].reshape(Perims.shape[0],-1) 
+        
+        # edge tensions
+        edge_tensions = Lambda_ij + membrn_edge
+        return torch.from_numpy(edge_tensions).type(dtype)
+
