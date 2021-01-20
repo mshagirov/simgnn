@@ -34,3 +34,23 @@ class mlp(torch.nn.Module):
     def forward(self, x):
         return self.layers(x)
 
+
+class EdgeModel(torch.nn.Module):
+    def __init__(self, in_features, out_features, **mlp_kwargs):
+        '''
+        Arg-s:
+        - in_features : input dim-s == `#src_features` + `#tgt_features` + `#edge_features`.
+        - out_features: output dim-s, e.g. `#edge_features`. 
+        
+        Optional kwargs for `mlp`: hidden_dims =[], dropout_p = 0, Fn = ReLU, Fn_kwargs = {}.
+        '''
+        super(EdgeModel, self).__init__()
+        self.edge_mlp = mlp(in_features, out_features, **mlp_kwargs)
+
+    def forward(self, src, tgt, edge_attr):
+        '''
+        - src, tgt : source and target features, each w/ shape (#edges, #src_features) and (#edges, #tgt_features)
+        - edge_attr : edge features w/ shape (#edges, #edge_features)
+        '''
+        return self.edge_mlp( torch.cat( [src, tgt, edge_attr], 1) )
+

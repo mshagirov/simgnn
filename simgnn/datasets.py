@@ -64,7 +64,7 @@ class VertexDynamics(Dataset):
         E.g. root contains ["raw", "processed", ...], and in folder "raw/" we should have ["simul1", "simul2", ...]
         - window_size : number of past velocities to be used as node features 
         `[x(T+0)-x(T-1), x(T-1)-x(T-2),..., x(T-window_size+1)-x(T-window_size)]`, where `x(T)` is node position at time `T`.
-        - transform :  transform(s) for graph datasets (e.g. from torch_geometric.transforms )
+        - transform :  transform(s) for graph datasets (e.g. from torch_geometric.transforms ), used in parent class' loading method.
         - pre_transform : transform(s) for data pre-processing (resulting graphs are saved in "preprocessed" folder)
         and used as this dataset's sample graphs.
         '''
@@ -127,7 +127,7 @@ class VertexDynamics(Dataset):
             
             # edge indices
             edges = torch.tensor(mg_dict['edges'],dtype=torch.long) # assume constant w.r.t "t"
-            edge_index = torch.cat( [edges.T.contiguous(), edges.fliplr().T.contiguous()], axis=1)
+            edge_index = edges.T.contiguous()
             
             # cell-to-node and node-to-cell "edge indices"
             cell2node_index = self.cell2edge(edges=edges, cells=mg_dict["cells"]) # cell_id-node_id pairs
