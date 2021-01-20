@@ -49,7 +49,7 @@ class EdgeModel(torch.nn.Module):
 
     def forward(self, src, tgt, edge_attr):
         '''
-        - src, tgt : source and target features, each w/ shape (#edges, #src_features) and (#edges, #tgt_features)
+        - src, tgt : source and target features w/ shapes (#edges, #src_features) and (#edges, #tgt_features)
         - edge_attr : edge features w/ shape (#edges, #edge_features)
         '''
         return self.edge_mlp( torch.cat( [src, tgt, edge_attr], 1) )
