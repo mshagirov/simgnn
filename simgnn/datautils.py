@@ -6,7 +6,7 @@ from os import mkdir
 def write_array(fpath, arr):
     '''
     Write numpy array to file using `np.save`.
-    
+
     Arg-s:
     - fpath: path to file, e.g. `array.npy`
     - arr: numpy nd-array.
@@ -17,7 +17,7 @@ def write_array(fpath, arr):
 
 def load_array(fpath):
     '''
-    Load numpy array from file (`fpath`) using `np.save`.
+    Load numpy array from file (`fpath`) using `np.load`.
     '''
     with open(fpath, 'rb') as f:
         arr = np.load(f)
