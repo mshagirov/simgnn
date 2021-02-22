@@ -3,6 +3,18 @@ import numpy as np
 import pickle
 from os import mkdir
 
+def mknewdir(dirpath):
+    '''mkdir but prints that dir already exists instead of throwing exception.
+    - Returns 1 (int) if dir already exists, or returns None otherwise.
+    '''
+    try:
+        mkdir(dirpath)
+    except FileExistsError:
+        print('Directory already exists.')
+        return 1
+
+
+# functions for writing/reading np arrays to/from files
 def write_array(fpath, arr):
     '''
     Write numpy array to file using `np.save`.
@@ -24,6 +36,7 @@ def load_array(fpath):
     return arr
 
 
+# functions for writing/reading dict [edges and cells] to/from files
 def write_graph(fpath, m):
     '''
     Write cell monolayer's graph and cells as a pickle file. This does not include the vertices.
@@ -41,14 +54,3 @@ def load_graph(fpath):
     with open(fpath, 'rb') as f:
         graph_dict = pickle.load(f)
     return graph_dict
-
-
-def mknewdir(dirpath):
-    '''mkdir but prints that dir already exists instead of throwing exception.
-    - Returns 1 (int) if dir already exists, or returns None otherwise.
-    '''
-    try:
-        mkdir(dirpath)
-    except FileExistsError:
-        print('Directory already exists.')
-        return 1
