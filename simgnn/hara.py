@@ -1,3 +1,7 @@
+"""
+Functions for processing Y. Hara et al. amnioserosa dataset.
+"""
+
 import numpy as np
 
 import skimage.io
@@ -30,7 +34,8 @@ def read_tiff_stack(filepath, trim_bound = True):
 def rm_small_holes(imgstack, area_threshold=2,connectivity=1):
     '''Remove small holes in image slices/frames w/ `skimage.morphology.remove_small_holes`.'''
     for t in range(imgstack.shape[0]):
-        imgstack[t,:,:] = 255*morphology.remove_small_holes(imgstack[t,:,:]==255, area_threshold=area_threshold, connectivity=connectivity)
+        imgstack[t,:,:] = 255*morphology.remove_small_holes(imgstack[t,:,:]==255,
+                                                            area_threshold=area_threshold, connectivity=connectivity)
     return imgstack
 
 
@@ -81,36 +86,6 @@ def get_cell_labels(img):
     cellxy = np.array([xy0.centroid[-1::-1] for xy0 in stats])# idx=l-1
 
     return labels,cellxy
-
-
-def get_node_locations(labels,xbound,ybound):
-    '''
-    Find tri-cellular junction nodes in labelled images (labels==cells), for not labeled images see `get_node_mask()`.
-
-    Nodes -- boundary point with more that 2 labels, i.e. more than 2 cells.
-
-    Arg-s:
-    - labels : labeled image
-    - xbound : x location of boundaries
-    - ybound : y location of boundaries
-
-    Returns:
-    - nodeLocs : x,y locations, m-by-2 array.
-    - nodenames : node names, a list of tuples.
-
-    Notes:
-
-    nodenames -- each node is named by the tuple of cell labels that share the node.
-    '''
-    nodelocs = []
-    nodenames = []
-    for x,y in zip(xbound,ybound):
-        neighbourLabels = np.unique(labels[y-1:y+2,x-1:x+2])
-        if neighbourLabels.shape[0]>3:
-            nodelocs.append([x, y])
-            nodenames.append(tuple(neighbourLabels[neighbourLabels!=0]))
-    nodelocs = np.array(nodelocs)
-    return nodelocs, nodenames
 
 
 def t_dist(x, y, w=10):
@@ -228,18 +203,19 @@ def relabel_w_previous(cellxy_t, cellxy_tn, labels_tn):
 
 def label_bw_stack(imgstack):
     '''
-    Label cells in bw image stack.
+    Label cells and extract their locations in BW image stack, pixel intensities \in {0, 255} (binary image).
 
     Arg-s:
-    - imgstack : numpy array of shape [frames, Y, X], BW image stack.
+    - imgstack : BW stack of cell boundary images (uint8, "255"=boundary), numpy array of shape [frames, Y, X].
 
     Returns:
     - labelStack : bound ROI labels w/ shape [frames, height, width], with labels "0" (background), "1" to "N" cells
+                   (dtype=np.uint64).
     - cellxyList : list of labeled ROI centroids, Nx2 arrays [x,y] of cell locations.
                    Row k corresponds to label "k+1", "-111" entry for [x,y]'s if no centroid is found.
     '''
     labelStack = np.zeros(shape = imgstack.shape, dtype=np.uint64)
-    print('label_bw_stack : labeling '+str(imgstack.shape[0])+' frames')
+    #print('label_bw_stack : labeling '+str(imgstack.shape[0])+' frames')
 
     cellxyList = []
 
@@ -256,5 +232,73 @@ def label_bw_stack(imgstack):
         cellxy_t = newcellxy_tn
         labelStack[t,:,:] = newlabels_tn
         cellxyList.append(newcellxy_tn.copy())
-    print('done.')
     return labelStack, cellxyList
+
+
+def get_node_locations(labels,xbound,ybound):
+    '''
+    Find tri-cellular junction nodes in labelled images (labels==cells), for not labeled images see `get_node_mask()`.
+
+    Nodes -- boundary point with more that 2 labels, i.e. more than 2 cells.
+
+    Arg-s:
+    - labels : labeled image of cells with integer pixel val-s ("0":background).
+    - xbound : x location of boundaries in "labels".
+    - ybound : y location of boundaries in "labels" w/ len(ybound)==len(xbound) .
+
+    Returns:
+    - nodeLocs : x,y locations, shape:(#nodes,2).
+    - nodenames : node names, a list of tuples. "nodenames" -- each node is named by the tuple of cell labels that share the node.
+    '''
+    nodelocs = []
+    nodenames = []
+    for x,y in zip(xbound,ybound):
+        neighbourLabels = np.unique(labels[y-1:y+2,x-1:x+2]) # unique labels in 3x3 neighbourhood
+        if neighbourLabels.shape[0]>3:
+            nodelocs.append([x, y])
+            nodenames.append(tuple(neighbourLabels[neighbourLabels!=0])) # exclude "0" label
+    nodelocs = np.array(nodelocs)
+    return nodelocs, nodenames
+
+
+def extract_nodes(imgstack, labelStack):
+    '''
+    Extract nodes from labeled cells and BW boundary stacks.
+
+    Arg-s:
+    - imgstack : boundary images (uint8, 255: boundary).
+    - labelStack : labeled cell images (from labelBWstack() ).
+
+    Returns:
+    - allNodes : dictionary of node loc-s (keys: tuples of cell labels).
+    '''
+    # 2D XY grid for images
+    Xgrid, Ygrid = np.meshgrid( np.arange( 0, imgstack.shape[2], 1),
+                                np.arange( 0, imgstack.shape[1], 1) )
+
+    # nodes in the 1st frame
+    xbound = Xgrid[ imgstack[0,:,:] != 0].ravel() # x y loc-s of the boundaries (frame 0)
+    ybound = Ygrid[ imgstack[0,:,:] != 0].ravel()
+    nodelocs_t, nodenames_t = get_node_locations( labelStack[0,:,:], xbound, ybound)
+
+    # create and load nodes dict; keys:"nodenames"==cell labels that share the node
+    allNodes = dict( zip( nodenames_t,
+                          np.full( (len(nodenames_t), labelStack.shape[0], 2), np.nan, dtype=np.float64)
+                        ) )
+    # Process and set node locations in the 1st frame.
+    for keyi,val in zip( nodenames_t, nodelocs_t):
+        allNodes[keyi][0,:] = val
+
+    # find nodes in other frames (t>0)
+    for t in range(1, labelStack.shape[0]):
+        # get x y loc-s of the boundaries (frame t):
+        xbound = Xgrid[ imgstack[t,:,:] != 0].ravel()
+        ybound = Ygrid[ imgstack[t,:,:] != 0].ravel()
+        nodelocs_t,nodenames_t = get_node_locations( labelStack[t,:,:], xbound, ybound)
+        for keyi,val in zip(nodenames_t, nodelocs_t):
+            if keyi in allNodes:
+                allNodes[keyi][t,:] = val
+            else:
+                allNodes[keyi] = np.full( (labelStack.shape[0], 2), np.nan, dtype=np.float64)
+                allNodes[keyi][t,:] = val
+    return allNodes
