@@ -267,10 +267,13 @@ def extract_nodes(imgstack, labelStack):
 
     Arg-s:
     - imgstack : boundary images (uint8, 255: boundary).
-    - labelStack : labeled cell images (from labelBWstack() ).
+    - labelStack : labeled cell images (from labelBWstack() ), labels: cells.
 
     Returns:
-    - allNodes : dictionary of node loc-s (keys: tuples of cell labels).
+    - allNodes : dictionary of node loc-s w/ tuples of cell labels as keys. Dict key-- vertex
+                 represented in terms of cells (labels) sharing the vertex, e.g. for a vertex
+                 shared among cells [i,j,k] : {(i, j, k): [x,y] np.array} where [i,j,k] are labels
+                 from `labelStack`.
     '''
     # 2D XY grid for images
     Xgrid, Ygrid = np.meshgrid( np.arange( 0, imgstack.shape[2], 1),
