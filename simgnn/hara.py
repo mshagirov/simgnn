@@ -213,6 +213,12 @@ def label_bw_stack(imgstack):
                    (dtype=np.uint64).
     - cellxyList : list of labeled ROI centroids, Nx2 arrays [x,y] of cell locations.
                    Row k corresponds to label "k+1", "-111" entry for [x,y]'s if no centroid is found.
+
+    An example for plotting `labelStack`:
+    ```
+    cmap, cnorm = get_cell_colormap(int(label_imgs.max()+1))
+    plt.imshow(labelStack[0], cmap=cmap, norm=cnorm) # show first frame
+    ```
     '''
     labelStack = np.zeros(shape = imgstack.shape, dtype=np.uint64)
     #print('label_bw_stack : labeling '+str(imgstack.shape[0])+' frames')
@@ -270,7 +276,7 @@ def extract_nodes(imgstack, labelStack):
     - labelStack : labeled cell images (from labelBWstack() ), labels: cells.
 
     Returns:
-    - allNodes : dictionary of node loc-s w/ tuples of cell labels as keys. Dict key-- vertex
+    - node_dict : dictionary of node loc-s w/ tuples of cell labels as keys. Dict key-- vertex
                  represented in terms of cells (labels) sharing the vertex, e.g. for a vertex
                  shared among cells [i,j,k] : {(i, j, k): [x,y] np.array} where [i,j,k] are labels
                  from `labelStack`.
@@ -285,12 +291,12 @@ def extract_nodes(imgstack, labelStack):
     nodelocs_t, nodenames_t = get_node_locations( labelStack[0,:,:], xbound, ybound)
 
     # create and load nodes dict; keys:"nodenames"==cell labels that share the node
-    allNodes = dict( zip( nodenames_t,
+    node_dict = dict( zip( nodenames_t,
                           np.full( (len(nodenames_t), labelStack.shape[0], 2), np.nan, dtype=np.float64)
                         ) )
     # Process and set node locations in the 1st frame.
     for keyi,val in zip( nodenames_t, nodelocs_t):
-        allNodes[keyi][0,:] = val
+        node_dict[keyi][0,:] = val
 
     # find nodes in other frames (t>0)
     for t in range(1, labelStack.shape[0]):
@@ -299,9 +305,71 @@ def extract_nodes(imgstack, labelStack):
         ybound = Ygrid[ imgstack[t,:,:] != 0].ravel()
         nodelocs_t,nodenames_t = get_node_locations( labelStack[t,:,:], xbound, ybound)
         for keyi,val in zip(nodenames_t, nodelocs_t):
-            if keyi in allNodes:
-                allNodes[keyi][t,:] = val
+            if keyi in node_dict:
+                node_dict[keyi][t,:] = val
             else:
-                allNodes[keyi] = np.full( (labelStack.shape[0], 2), np.nan, dtype=np.float64)
-                allNodes[keyi][t,:] = val
-    return allNodes
+                node_dict[keyi] = np.full( (labelStack.shape[0], 2), np.nan, dtype=np.float64)
+                node_dict[keyi][t,:] = val
+    return node_dict
+
+
+def node_dict2graph(node_dict):
+    '''
+    Selects constant part of the cell monolayer graph (vertices and edges that are present in all frames).
+
+    Arg-s:
+    - node_dict : dictionary of node loc-s w/ tuples of cell labels as keys (must have
+                  same format as the output of `simgnn.hara.extract_nodes()`).
+
+    Returns:
+    - edges_index : edge indices, rows representing "source" and "target" node indices.
+    - node2cell_index : node-to-cell "edge indices", rows representing node indices and
+                        cell indices (cell labels in `node_dict` keys)
+    - node_pos : node positions w/ shape (num_of_frames)x(num_of_nodes)x2
+    '''
+    # nodes (keys) present in all frames
+    v_names = [vn for vn in node_dict if ~np.any(np.isnan( node_dict[vn][:,0]))]
+
+    # find edges -- pairs of node indices in v_names
+    edges = np.array( [[ni, nj] for ni in range(len(v_names))
+                       for nj in range(ni+1,len(v_names))
+                       if len(set(v_names[ni]).intersection(v_names[nj]))>1])
+
+    # reindex nodes and exclude nodes w/o edges
+    v_newid = {v_i:l for l, v_i in enumerate([v_c for k, v_c in enumerate(v_names) if k in edges])}
+    v_names_new = list(v_newid.keys())
+    edges_index = np.array([[v_newid[v_names[e[0]]], v_newid[v_names[e[1]]]] for e in edges]).T
+
+    # node_idx-to-cell_idx
+    node2cell_index = np.concatenate([np.stack([np.full((len(v_c),), k, dtype=np.uint64), np.array(v_c)], axis=0)
+                                      for k, v_c in enumerate(v_names_new)], axis=1)
+
+    # vert positions array: #frames, #verts, #dims(==2)
+    node_pos = np.stack([ node_dict[v_c] for v_c in v_names_new ],axis=1)
+
+    return edges_index, node2cell_index, node_pos
+
+
+def extract_graph(imgstack, labelStack):
+    '''
+    Converts BW cell boundary images into graphs. Selects constant part of the
+    graph-- vertices and edges that are present in all frames.
+
+    Arg-s:
+    - imgstack : boundary images (uint8, 255: boundary).
+    - labelStack : labeled cell images (from labelBWstack() ), labels: cells.
+
+    `imgstack` and `labelStack` shapes must be same:(num_of_frames)xHeightxWidth.
+
+    Returns:
+    - edges_index : edge indices, rows representing "source" and "target" node indices.
+    - node2cell_index : node-to-cell "edge indices", rows representing node indices and
+                        cell indices (cell labels in `node_dict` keys)
+    - node_pos : node positions w/ shape (num_of_frames)x(num_of_nodes)x2
+
+    Plotting example: plotting 10th edge from 2nd frame
+    ```
+    plt.plot( node_pos[2, edges_index[0,10], 0], node_pos[2, edges_index[1,10], 1] )
+    ```
+    '''
+    return node_dict2graph( extract_nodes(imgstack, labelStack))
