@@ -41,7 +41,7 @@ def rm_small_holes(imgstack, area_threshold=2,connectivity=1):
 
 def get_cell_colormap(max_label, cmap = plt.cm.nipy_spectral_r, cmap_0 = (.5,.5,.5,1.0) ):
     '''
-    Set number of colour (bins) and first colour.
+    Set number of colours (bins) and first colour.
 
     Arg-s:
     - max_label : maximum value for labels
@@ -352,7 +352,7 @@ def node_dict2graph(node_dict):
 
 def extract_graph(imgstack, labelStack):
     '''
-    Converts BW cell boundary images into graphs. Selects constant part of the
+    Converts BW cell boundary images to graphs. Selects constant part of the
     graph-- vertices and edges that are present in all frames.
 
     Arg-s:
