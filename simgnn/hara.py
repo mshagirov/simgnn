@@ -367,8 +367,11 @@ def extract_graph(imgstack, labelStack):
                         cell indices (cell labels in `node_dict` keys)
     - node_pos : node positions w/ shape (num_of_frames)x(num_of_nodes)x2
 
-    Plotting example: plotting 10th edge from 2nd frame
+    Usage example:
     ```
+    labelStack, _ = label_bw_stack(imgstack)
+    edges_index,node2cell_index,node_pos = extract_graph(imgstack, labelStack)
+    # plotting 10th edge from 2nd frame
     plt.plot( node_pos[2, edges_index[0,10], 0], node_pos[2, edges_index[1,10], 1] )
     ```
     '''
