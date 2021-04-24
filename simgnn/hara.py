@@ -338,10 +338,10 @@ def node_dict2graph(node_dict):
     # reindex nodes and exclude nodes w/o edges
     v_newid = {v_i:l for l, v_i in enumerate([v_c for k, v_c in enumerate(v_names) if k in edges])}
     v_names_new = list(v_newid.keys())
-    edges_index = np.array([[v_newid[v_names[e[0]]], v_newid[v_names[e[1]]]] for e in edges]).T
+    edges_index = np.array([[v_newid[v_names[e[0]]], v_newid[v_names[e[1]]]] for e in edges]).T.astype(np.int64)
 
     # node_idx-to-cell_idx
-    node2cell_index = np.concatenate([np.stack([np.full((len(v_c),), k, dtype=np.uint64), np.array(v_c)], axis=0)
+    node2cell_index = np.concatenate([np.stack([np.full((len(v_c),), k, dtype=np.int64), np.array(v_c, dtype=np.int64)], axis=0)
                                       for k, v_c in enumerate(v_names_new)], axis=1)
 
     # vert positions array: #frames, #verts, #dims(==2)
