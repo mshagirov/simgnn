@@ -17,7 +17,7 @@ class CellData(Data):
         self.cell2node_index = cell2node_index
         self.y_cell = y_cell
         self.__num_cells__ = num_cells
-    
+
     @property
     def num_cells(self):
         if self.__num_cells__!=None:
@@ -28,11 +28,11 @@ class CellData(Data):
         if self.cell2node_index!=None:
             print('Number of cells is inferred from `cell2node_index`!')
             return self.cell2node_index[0].max()+1
-    
+
     @num_cells.setter
     def num_cells(self,val):
         self.__num_cells__ = val
-        
+
     def __inc__(self, key, value):
         if key == 'node2cell_index':
             return torch.tensor([[self.num_nodes], [self.num_cells]])
@@ -40,7 +40,7 @@ class CellData(Data):
             return torch.tensor([[self.num_cells], [self.num_nodes]])
         else:
             return super(CellData, self).__inc__(key, value)
-    
+
     def __cat_dim__(self, key, value):
         if key == 'node2cell_index' or key == 'cell2node_index':
             return -1
@@ -52,17 +52,17 @@ class VertexDynamics(Dataset):
     def __init__(self, root, window_size=5, transform=None, pre_transform=None):
         '''
         Assumes `root` dir contains folder named `raw` with all vertex dynamics simulation results
-        for tracing vertex trajectories, building graphs, and variables for computing edge tensions 
+        for tracing vertex trajectories, building graphs, and variables for computing edge tensions
         and cell pressures.
         - Velocities are approximated as 1st order differences of positions `x` in subsequent frames:
           `velocity(T+0) = x(T+1) - x(T+0)`.
         - Use `pre_transform` for normalising and pre-processing dataset(s).
-        
+
         Arg-s:
         - root : path to a root directory that contains folder with raw dataset(s) in a folder named "raw".
         Raw datasets should be placed into separate folders each containing outputs from a single simulation.
         E.g. root contains ["raw", "processed", ...], and in folder "raw/" we should have ["simul1", "simul2", ...]
-        - window_size : number of past velocities to be used as node features 
+        - window_size : number of past velocities to be used as node features
         `[x(T+0)-x(T-1), x(T-1)-x(T-2),..., x(T-window_size+1)-x(T-window_size)]`, where `x(T)` is node position at time `T`.
         - transform :  transform(s) for graph datasets (e.g. from torch_geometric.transforms ), used in parent class' loading method.
         - pre_transform : transform(s) for data pre-processing (resulting graphs are saved in "preprocessed" folder)
@@ -70,18 +70,18 @@ class VertexDynamics(Dataset):
         '''
         self.raw_dir_path = path.join(root,'raw')
         assert path.isdir(self.raw_dir_path), f'Folder "{root}" does not contain folder named "raw".'
-        
+
         self.window_size = window_size
-        
+
         super(VertexDynamics, self).__init__(root, transform, pre_transform)
         # super's __init__ runs process() [and download() if defined].
 
     @property
     def raw_file_names(self):
-        raw_dirs = [folder_i for folder_i in listdir(self.raw_dir_path) 
+        raw_dirs = [folder_i for folder_i in listdir(self.raw_dir_path)
                     if path.isdir( path.join( self.raw_dir_path, folder_i))]
         #file_names = [path.join(dir_i, file_i) for dir_i in raw_dirs
-        #              for file_i in listdir(path.join(self.raw_dir_path,dir_i))] 
+        #              for file_i in listdir(path.join(self.raw_dir_path,dir_i))]
         return raw_dirs
 
     @property
@@ -90,9 +90,9 @@ class VertexDynamics(Dataset):
         Return list of pytorch-geometric data files in `root/processed` folder (`self.processed_dir`).
         '''
         # "last_idx" : last index of window in "vertex velocity" (for features)
-        # last_idx=T-(2+window_size) --> num of processed frames: num_of_frames=last_idx+1 
+        # last_idx=T-(2+window_size) --> num of processed frames: num_of_frames=last_idx+1
         nums_of_frames = [ (path.basename(raw_path),
-                            load_array(path.join(raw_path,'simul_t.npy')).shape[0]-(2+self.window_size)+1 
+                            load_array(path.join(raw_path,'simul_t.npy')).shape[0]-(2+self.window_size)+1
                            ) for raw_path in self.raw_paths]
         file_names = ['data_{}_{}.pt'.format(raw_path, t)
                       for raw_path, tmax in nums_of_frames for t in range(tmax)]
@@ -106,37 +106,37 @@ class VertexDynamics(Dataset):
         '''
         for raw_path in self.raw_paths:
             # simulation instance in "raw_path"
-            
+
             # monolayer graph (topology)
             mg_dict = load_graph(path.join(raw_path,'graph_dict.pkl'))
-            
+
             # Load node positions from raw_path and convert to (windowed) node attrib-s and targets.
             node_pos, X_node, Y_node = self.pos2nodeXY(pos_path = path.join(raw_path,'simul_vtxpos.npy') )
-            
+
             # T+0 Cell pressures
             cell_presrs = self.cell_pressures(area_path = path.join(raw_path, 'simul_Area.npy'),
                                               a0_path = path.join(raw_path, 'simul_A0.npy'),
                                               ka_path = path.join(raw_path, 'simul_Ka.npy'))
-            
+
             # T+0 Edge tensions
             edge_tensns = self.edge_tensions(mg_dict = mg_dict,
                                              lambdaij_path = path.join(raw_path,'simul_Lambda_ij.npy'),
                                              perim_path = path.join(raw_path, 'simul_Perimeter.npy'),
                                              p0_path = path.join(raw_path, 'simul_P0.npy'),
                                              kp_path = path.join(raw_path, 'simul_Kp.npy') )
-            
+
             # edge indices
             edges = torch.tensor(mg_dict['edges'],dtype=torch.long) # assume constant w.r.t "t"
             edge_index = edges.T.contiguous()
-            
+
             # cell-to-node and node-to-cell "edge indices"
             cell2node_index = self.cell2edge(edges=edges, cells=mg_dict["cells"]) # cell_id-node_id pairs
             node2cell_index = cell2node_index[[1,0]].contiguous() # node_id-cell_id pairs
-            
+
             sim_name = path.basename(raw_path) # folder name for the files
             N_nodes = node_pos.size(1) # assume constant w.r.t. "t"
             N_cells = max(mg_dict['cells'].keys())+1 # num_of_cells assume constant w.r.t. "t"
-            
+
             for t in range(node_pos.size(0)):
                 data = CellData(num_nodes = N_nodes,
                                 num_cells = N_cells,
@@ -151,27 +151,27 @@ class VertexDynamics(Dataset):
                 if self.pre_transform is not None:
                     data = self.pre_transform(data)
                 torch.save(data, path.join(self.processed_dir, 'data_{}_{}.pt'.format(sim_name, t)))
-    
+
     def len(self):
         return len(self.processed_file_names)
 
     def get(self, idx):
         data = torch.load( path.join( self.processed_dir, self.processed_file_names[idx]))
         return data
-    
+
     def pos2nodeXY(self, pos_path=None):
         '''
-        Load 'simul_vtxpos.npy' and pre-process it into windowed data of velocities (1st differences) using 
+        Load 'simul_vtxpos.npy' and pre-process it into windowed data of velocities (1st differences) using
         `self.window_size` number of past velocities (frames) as node features.
-         
+
         - pos_path: path to vertex positions file, e.g. 'simul_vtxpos.npy', containing an array with shape `(frames)xNx2`.
-        
+
         Returns: {dtype : `torch.float32`}
         - node_pos: node positions : shape (num_of_frames)xNx2
         - X_node: node velocities ordered from `T-window_size` to `T-1` : shape (num_of_frames)xNx(window_size)x2
         - Y_node : `T+0` vertex velocities : shape (num_of_frames)xNx2
-        
-        Where the `num_of_frames=last_idx+1`, and `last_idx=frames-(2+window_size)` is the last index of window in vx_vel 
+
+        Where the `num_of_frames=last_idx+1`, and `last_idx=frames-(2+window_size)` is the last index of window in vx_vel
         (full array of 1st differences of the node positions with "frames-1" number of frames, i.e. vx_pos.shape[0]==frames).
         '''
         # vertex trajectories:(Frames,Vertices,Dims)=TxNx2
@@ -188,42 +188,42 @@ class VertexDynamics(Dataset):
         # T+0 vertex velocities
         Y_node = torch.from_numpy(vx_vel[self.window_size:]).type(dtype) # (num_of_frames)xNx2
         return node_pos, X_node, Y_node
-    
+
     def cell2edge(self, edges=None, cells=None):
         '''
         - edges: source-target vertex index pairs of directed edges (i.e. single copy of each edge in a graph)
         - cells: cells dict, cell indices (0...N_cells-1):int as keys and shifted edge indices (1..N_edges):int as values.
         Edges in cells must be ordered in order of their connection, indexing starts from 1 with negative indices indicating
         reversed order of vertices e.g. e[ID]=(v1,v2) and e[-ID]=(v2,v1). Edge indices in cells:`cells[ci]= [ID,...]` are
-        converted to node (vertex) indices in "edges" tensor with `edge_ID=np.abs(ID)-1` ==> `(v1,v2) = edges[edge_ID]`, and 
+        converted to node (vertex) indices in "edges" tensor with `edge_ID=np.abs(ID)-1` ==> `(v1,v2) = edges[edge_ID]`, and
         order of the vertices is inferred from sign of `np.sign(ID)`: if 1 =>(v1,v2), elif -1 =>(v2,v1).
         '''
         return torch.cat([torch.stack( [torch.empty( len(cells[ci]), dtype=edges.dtype).fill_(ci),
                                        edges[np.abs(cells[ci])-1,np.sign(np.sign(cells[ci])-1)] ], dim=0)
                           for ci in cells ], dim=-1)
-    
+
     def cell_pressures(self, area_path=None,a0_path=None,ka_path=None):
         '''
         Load numpy arrays from cell `Area`, target/equilibrium area `A0`, and "spring" constant `Ka` "*.npy" files, and
         pre-process these var-s as windowed data, and then computes cell pressures using these arrays.
         `press_c = -2*Ka*(A-A0)` for each cell.
-        
+
         - area_path : cell areas w/ shape Frames x Cells
         - a0_path : equilibrium areas w/ shape Frames x Cells or (Frames,)
         - ka_path : area "spring constants" w/ shape Frames x Cells or (Frames,)
-        
+
         Rerturns: {torch.Tensor, dtype:`torch.float32`}
-        - cell_presrs : cell pressures w/ shape (num_of_frames)xCells, where the `num_of_frames=last_idx+1`, and 
-        `last_idx=Frames-(2+window_size)` is the last index of window in `vx_vel` (full array of 1st differences of the node 
+        - cell_presrs : cell pressures w/ shape (num_of_frames)xCells, where the `num_of_frames=last_idx+1`, and
+        `last_idx=Frames-(2+window_size)` is the last index of window in `vx_vel` (full array of 1st differences of the node
         positions with `Frames-1` number of frames, i.e. `vx_pos.shape[0]==Frames`).
         '''
         Area = load_array(area_path)[self.window_size:-1]
         A0 = load_array(a0_path)[self.window_size:-1]
         Ka = load_array(ka_path)[self.window_size:-1]
-        
+
         cell_presrs = -2.0*Ka.reshape(Area.shape[0],-1)*(Area.reshape(Area.shape[0],-1) - A0.reshape(Area.shape[0],-1))
         return torch.from_numpy(cell_presrs).type(dtype)
-    
+
     def edge_tensions(self, mg_dict=None, lambdaij_path=None, perim_path=None, p0_path=None, kp_path=None):
         '''
         - mg_dict : monolayer graph dict will cells and edges (from `graph_dict.pkl` file).
@@ -233,9 +233,9 @@ class VertexDynamics(Dataset):
         - p0_path : location of cell equilibrium perimeters `P0` array w/ shape (Frames,) or same shape as `Perimeters` array.
         - kp_path : location of cell perimeter "spring" constants, an array w/ shape (Frames,) or same shape as
         `Perimeters` array.
-        
+
         Returns : {torch.Tensor, dtype:`torch.float32`}
-        - tensions : edge tensions w/ shape (num_of_frames)xEdges (how to compute "num_of_frames": 
+        - tensions : edge tensions w/ shape (num_of_frames)xEdges (how to compute "num_of_frames":
         see docs for `VertexDynamics.cell_pressures()`)
         '''
         # dict of cells sharing edges (neighbours)
@@ -243,24 +243,105 @@ class VertexDynamics(Dataset):
         for ci in mg_dict['cells']:
             for ei in np.abs(mg_dict['cells'][ci])-1:
                 edge_cells[ei].append(ci)
-        
+
         # Compute membrane tension (depends only on cell perimeter var-s)
         #
         Perims = load_array(perim_path)[self.window_size:-1]
         P0 = load_array(p0_path)[self.window_size:-1]
         Kp = load_array(kp_path)[self.window_size:-1]
-        
+
         # compute cell-wise membrane tensions
         membrn_cells = Kp.reshape(Perims.shape[0],-1)*(Perims.reshape(Perims.shape[0],-1) - P0.reshape(Perims.shape[0],-1) )
-        
+
         # edge-wise sum of membrane tensions
         membrn_edge = np.concatenate([membrn_cells[:, edge_cells[ei]].sum(axis=1, keepdims=True)
                                       for ei in edge_cells], axis=1)
-        
+
         # active tension due to (edge) contractility
-        Lambda_ij = load_array(lambdaij_path)[self.window_size:-1].reshape(Perims.shape[0],-1) 
-        
+        Lambda_ij = load_array(lambdaij_path)[self.window_size:-1].reshape(Perims.shape[0],-1)
+
         # edge tensions
         edge_tensions = Lambda_ij + membrn_edge
         return torch.from_numpy(edge_tensions).type(dtype)
 
+
+class HaraMovies(VertexDynamics):
+    '''
+    Y. Hara et al. amnioserosa movies.
+    '''
+    def __init__(self, root, window_size=5, transform=None, pre_transform=None):
+        '''
+        Assumes `root` dir contains folder named `raw` with all vertex dynamics simulation results
+        for tracing vertex trajectories, building graphs, and variables for computing edge tensions
+        and cell pressures.
+        - Velocities are approximated as 1st order differences of positions `x` in subsequent frames:
+          `velocity(T+0) = x(T+1) - x(T+0)`.
+        - Use `pre_transform` for normalising and pre-processing dataset(s).
+
+        Arg-s:
+        - root : path to a root directory that contains folder with raw dataset(s) in a folder named "raw".
+        Raw datasets should be placed into separate folders each containing outputs from a single simulation.
+        E.g. root contains ["raw", "processed", ...], and in folder "raw/" we should have ["simul1", "simul2", ...]
+        - window_size : number of past velocities to be used as node features
+        `[x(T+0)-x(T-1), x(T-1)-x(T-2),..., x(T-window_size+1)-x(T-window_size)]`, where `x(T)` is node position at time `T`.
+        - transform :  transform(s) for graph datasets (e.g. from torch_geometric.transforms ), used in parent class' loading method.
+        - pre_transform : transform(s) for data pre-processing (resulting graphs are saved in "preprocessed" folder)
+        and used as this dataset's sample graphs.
+        '''
+        super(HaraMovies, self).__init__(root, window_size, transform, pre_transform)
+
+    @property
+    def processed_file_names(self):
+        '''
+        Return list of pytorch-geometric data files in `root/processed` folder (`self.processed_dir`).
+        '''
+        # "last_idx" : last index of window in "vertex velocity" (for features)
+        # last_idx=T-(2+window_size) --> num of processed frames: num_of_frames=last_idx+1
+        nums_of_frames = [ (path.basename(raw_path),
+                            load_array(path.join(raw_path,'vtx_pos.npy')).shape[0]-(2+self.window_size)+1
+                           ) for raw_path in self.raw_paths]
+        file_names = ['data_{}_{}.pt'.format(raw_path, t)
+                      for raw_path, tmax in nums_of_frames for t in range(tmax)]
+        return file_names
+
+    def process(self):
+        '''
+        Assumptions:
+        - the parent class init runs _process() and initialises all the required dir-s.
+        - cell graph topology and number of nodes is constant w.r.t. to frames.
+        '''
+        for raw_path in self.raw_paths:
+            # a movie in "raw_path"
+            # monolayer graph (topology)
+            # mg_dict = load_graph(path.join(raw_path,'graph_dict.pkl'))
+
+            # Load node positions from raw_path and convert to (windowed) node attrib-s and targets.
+            node_pos, X_node, Y_node = self.pos2nodeXY(pos_path = path.join(raw_path,'vtx_pos.npy') )
+
+            # edge indices
+            edge_index = torch.from_numpy( load_array( path.join( raw_path, 'edges_index.npy'))
+                                         ).type(torch.long).contiguous()
+
+            # cell-to-node and node-to-cell "edge indices"
+            node2cell_index = torch.from_numpy( load_array( path.join( raw_path, 'node2cell_index.npy'))
+                                              ).type(torch.long).contiguous() # node_id-cell_id pairs
+            cell2node_index = node2cell_index[[1,0]].contiguous() # cell_id-node_id pairs
+
+            mov_name = path.basename(raw_path) # folder name for the files
+            N_nodes = node_pos.size(1) # number of vertices/nodes (assume constant w.r.t. time)
+            N_cells = cell2node_index[0].max().item() + 1 # num_of_cells (assume constant w.r.t. time)
+
+            for t in range(node_pos.size(0)):
+                data = CellData(num_nodes = N_nodes,
+                                num_cells = N_cells,
+                                edge_index = edge_index,
+                                node2cell_index = node2cell_index, cell2node_index = cell2node_index,
+                                pos = node_pos[t], x = X_node[t], y = Y_node[t],
+                                cell_pressures = None,
+                                edge_tensions = None
+                               )
+                if self.pre_filter is not None and not self.pre_filter(data):
+                    continue
+                if self.pre_transform is not None:
+                    data = self.pre_transform(data)
+                torch.save(data, path.join(self.processed_dir, 'data_{}_{}.pt'.format(mov_name, t)))
