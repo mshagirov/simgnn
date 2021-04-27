@@ -49,6 +49,8 @@ class CellData(Data):
 
 
 class VertexDynamics(Dataset):
+    '''For processing and working with vertex dynamics simulation output files.'''
+
     def __init__(self, root, window_size=5, transform=None, pre_transform=None):
         '''
         Assumes `root` dir contains folder named `raw` with all vertex dynamics simulation results
@@ -267,16 +269,19 @@ class VertexDynamics(Dataset):
 
 class HaraMovies(VertexDynamics):
     '''
-    Y. Hara et al. amnioserosa movies.
+    For working with processed Y. Hara et al. amnioserosa movies. Hara movies dataset does not have edge tensions
+    and cell pressures, otherwise it is similar to the VertexDynamics dataset. 
     '''
+
     def __init__(self, root, window_size=5, transform=None, pre_transform=None):
         '''
-        Assumes `root` dir contains folder named `raw` with all vertex dynamics simulation results
-        for tracing vertex trajectories, building graphs, and variables for computing edge tensions
-        and cell pressures.
-        - Velocities are approximated as 1st order differences of positions `x` in subsequent frames:
-          `velocity(T+0) = x(T+1) - x(T+0)`.
-        - Use `pre_transform` for normalising and pre-processing dataset(s).
+        Assumes `root` dir contains folder named `raw` with following files that contain results
+        for tracing vertex trajectories, building graphs:
+        - vtx_pos.npy : shape (Frames, Vertices, 2), positions of tri-cellular junctions.
+        - edges_index.npy : shape (2, Edges), edge indices-- each column contains indices of source and target vertices/nodes.
+        - node2cell_index.npy : shape (2, Node-to-Cell edges), first row contains indices of the nodes/vertices, and second
+                                row contains indices of the corresponding cell IDs (cell indices).
+        - edge_Length.npy (optional) : shape (Frames, Edges, 1), edge lengths.
 
         Arg-s:
         - root : path to a root directory that contains folder with raw dataset(s) in a folder named "raw".
@@ -287,6 +292,11 @@ class HaraMovies(VertexDynamics):
         - transform :  transform(s) for graph datasets (e.g. from torch_geometric.transforms ), used in parent class' loading method.
         - pre_transform : transform(s) for data pre-processing (resulting graphs are saved in "preprocessed" folder)
         and used as this dataset's sample graphs.
+
+        Notes:
+        - Velocities are approximated as 1st order differences of positions `x` (vtx_pos.npy) in subsequent frames:
+          `velocity(T+0) = x(T+1) - x(T+0)`.
+        - Use `pre_transform` for normalising and pre-processing dataset(s).
         '''
         super(HaraMovies, self).__init__(root, window_size, transform, pre_transform)
 
