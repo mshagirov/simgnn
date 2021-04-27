@@ -37,8 +37,11 @@ class Pos2Vec(object):
         return '{}(norm={}, scale={}, cat={})'.format(self.__class__.__name__, self.norm, self.scale, self.cat)
 
 
-class ScaleVelocity(object):
-    '''Scales velocities (`data.x` and `data.y`) by a given amount : e.g. `data.x = data.x/scale`.'''
+class ScaleVar(object):
+    '''
+    Abstract class for scaling variables `data.var` by a given amount s.t. `data.var = data.var/scale`.
+    After inheriring `ScaleVar` you will need to write the `__call__`, and optionally the `__repr__` methods.
+    '''
     def __init__(self, scale):
         '''
         Arg-s:
@@ -46,6 +49,23 @@ class ScaleVelocity(object):
         '''
         assert scale>0
         self.scale = scale
+    def __call__(self, data):
+        '''
+        - data : an input graph.
+        '''
+        pass
+    def __repr__(self):
+        return '{}(scale={})'.format(self.__class__.__name__, self.scale)
+
+
+class ScaleVelocity(ScaleVar):
+    '''Scales velocities (`data.x` and `data.y`) by a given amount : e.g. `data.x = data.x/scale`.'''
+    def __init__(self, scale):
+        '''
+        Arg-s:
+        - scale : a scalar s.t. `scale>0`, `data.x` and `data.y` are divided by `scale`.
+        '''
+        super(ScaleVelocity, self).__init__(scale)
 
     def __call__(self, data):
         '''
@@ -59,5 +79,49 @@ class ScaleVelocity(object):
 
         return data
 
+
+class ScaleTension(ScaleVar):
+    '''
+    Scales tension in `data.edge_tensions` by a given amount:
+    `data.edge_tensions = ( data.edge_tensions - shift )/scale`.
+    '''
+    def __init__(self, scale, shift=0):
+        '''
+        Arg-s:
+        - scale : must be `scale>0`.
+        - shift : mean shift {default: 0}.
+        '''
+        super(ScaleTension, self).__init__(scale)
+        self.shift = shift
+
+    def __call__(self, data):
+        '''
+        - data : an input graph.
+        '''
+        if data.edge_tensions is not None:
+            data.edge_tensions = (data.edge_tensions - self.shift)/self.scale
+        return data
     def __repr__(self):
-        return '{}(scale={})'.format(self.__class__.__name__, self.scale)
+        return '{}(scale={}, shift={})'.format(self.__class__.__name__, self.scale,self.shift)
+
+
+class ScalePressure(ScaleTension):
+    '''
+    Scales cell pressures in `data.cell_pressures` by a given amount:
+    `data.cell_pressures = ( data.cell_pressures - shift )/scale`.
+    '''
+    def __init__(self, scale, shift=0):
+        '''
+        Arg-s:
+        - scale : must be `scale>0`.
+        - shift : mean shift {default: 0}.
+        '''
+        super(ScalePressure, self).__init__(scale, shift=shift)
+
+    def __call__(self, data):
+        '''
+        - data : an input graph.
+        '''
+        if data.cell_pressures is not None:
+            data.cell_pressures = (data.cell_pressures - self.shift)/self.scale
+        return data
