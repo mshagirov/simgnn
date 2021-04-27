@@ -228,6 +228,10 @@ class VertexDynamics(Dataset):
 
     def edge_tensions(self, mg_dict=None, lambdaij_path=None, perim_path=None, p0_path=None, kp_path=None):
         '''
+        Compute edge tensions (`tension_ij = dEnergy / dlength_ij`) :
+        `tension_ij = Lambda_ij + 2*Kp_i*(perim_i - p0_i) + 2*Kp_j*(perim_j - p0_j)`
+
+        Arg-s:
         - mg_dict : monolayer graph dict will cells and edges (from `graph_dict.pkl` file).
         - lambdaij_path : location of `Lambda_ij` "*.npy" file that contains an numpy array w/ shape
         Frames x Edges x 1, or Frames x Edges.
@@ -236,7 +240,7 @@ class VertexDynamics(Dataset):
         - kp_path : location of cell perimeter "spring" constants, an array w/ shape (Frames,) or same shape as
         `Perimeters` array.
 
-        Returns : {torch.Tensor, dtype:`torch.float32`}
+        Returns : {torch.Tensor, default dtype:`torch.float32`}
         - tensions : edge tensions w/ shape (num_of_frames)xEdges (how to compute "num_of_frames":
         see docs for `VertexDynamics.cell_pressures()`)
         '''
@@ -253,7 +257,7 @@ class VertexDynamics(Dataset):
         Kp = load_array(kp_path)[self.window_size:-1]
 
         # compute cell-wise membrane tensions
-        membrn_cells = Kp.reshape(Perims.shape[0],-1)*(Perims.reshape(Perims.shape[0],-1) - P0.reshape(Perims.shape[0],-1) )
+        membrn_cells = 2.0*Kp.reshape(Perims.shape[0],-1)*(Perims.reshape(Perims.shape[0],-1) - P0.reshape(Perims.shape[0],-1) )
 
         # edge-wise sum of membrane tensions
         membrn_edge = np.concatenate([membrn_cells[:, edge_cells[ei]].sum(axis=1, keepdims=True)
@@ -262,7 +266,7 @@ class VertexDynamics(Dataset):
         # active tension due to (edge) contractility
         Lambda_ij = load_array(lambdaij_path)[self.window_size:-1].reshape(Perims.shape[0],-1)
 
-        # edge tensions
+        # total edge tensions
         edge_tensions = Lambda_ij + membrn_edge
         return torch.from_numpy(edge_tensions).type(dtype)
 
@@ -270,7 +274,7 @@ class VertexDynamics(Dataset):
 class HaraMovies(VertexDynamics):
     '''
     For working with processed Y. Hara et al. amnioserosa movies. Hara movies dataset does not have edge tensions
-    and cell pressures, otherwise it is similar to the VertexDynamics dataset. 
+    and cell pressures, otherwise it is similar to the VertexDynamics dataset.
     '''
 
     def __init__(self, root, window_size=5, transform=None, pre_transform=None):
