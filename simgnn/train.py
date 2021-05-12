@@ -76,8 +76,9 @@ def train_model(model,
                 with torch.set_grad_enabled(state=='train' and metric==loss_metric):
                     X_vel, E_tens, C_pres = model(data) # outputs:(batch, #dims)
                     vel_loss    = loss_func(X_vel, data.y)
-                    tens_loss   = loss_func(E_tens, data.edge_tensions)
-                    pres_loss   = loss_func(C_pres, data.cell_pressures)
+
+                    tens_loss   = 0.0 if data.edge_tensions is None else loss_func(E_tens, data.edge_tensions)
+                    pres_loss   = 0.0 if data.cell_pressures is None else loss_func(C_pres, data.cell_pressures)
 
                     loss = vel_loss + tens_loss + pres_loss # total loss
 
@@ -85,22 +86,28 @@ def train_model(model,
                         loss.backward()
                         optimizer.step()
                 # accumulate losses
-                running_losses[f'{state}_loss_total'] += loss.item()*data.x.size(0)
-                n_samples[f'{state}_loss_total'] += data.x.size(0)
-
                 running_losses[f'{state}_loss_vel'] += vel_loss.item()*data.x.size(0)
                 n_samples[f'{state}_loss_vel'] += data.x.size(0)
 
-                running_losses[f'{state}_loss_tens'] += tens_loss.item()*data.edge_tensions.size(0)
-                n_samples[f'{state}_loss_tens'] += data.edge_tensions.size(0)
+                # total loss values are valid only for datasets w/ all variable
+                running_losses[f'{state}_loss_total'] += loss.item()*data.x.size(0)
+                n_samples[f'{state}_loss_total'] += data.x.size(0)
 
-                running_losses[f'{state}_loss_pres'] += pres_loss.item()*data.cell_pressures.size(0)
-                n_samples[f'{state}_loss_pres'] += data.cell_pressures.size(0)
+                if data.edge_tensions is not None:
+                    running_losses[f'{state}_loss_tens'] += tens_loss.item()*data.edge_tensions.size(0)
+                    n_samples[f'{state}_loss_tens'] += data.edge_tensions.size(0)
+
+                if data.cell_pressures is not None:
+                    running_losses[f'{state}_loss_pres'] += pres_loss.item()*data.cell_pressures.size(0)
+                    n_samples[f'{state}_loss_pres'] += data.cell_pressures.size(0)
 
             for k in loss_categories:
                 # log losses for dataset==state
+                if n_samples[f'{state}_loss_{k}']<1:
+                    print(f"{state}_loss_{k}=nil",end='; ')
+                    continue
                 train_log[f'{state}_loss_{k}'].append( running_losses[f'{state}_loss_{k}']/n_samples[f'{state}_loss_{k}'])
-                print(f'{state}_loss_{k}={train_log[f'{state}_loss_{k}'][-1]:.4f}',end='; ')
+                print(f"{state}_loss_{k}={train_log[f'{state}_loss_{k}'][-1]:.4f}",end='; ')
             print('| ',end='')
 
             if state == 'val' and epoch==0 :
@@ -120,7 +127,7 @@ def train_model(model,
             scheduler.step()
 
     time_elapsed = time.time() - time_start
-    print(f'Training complete in {time_elapsed//60:.0f}m {time_elapsed % 60:.0f}s')
+    print(f'Total elapsed time : {time_elapsed//60:.0f}m {time_elapsed % 60:.0f}s')
     print(f'Best val Acc: {best_acc:4f} (return best:{return_best})')
 
     if return_best:
