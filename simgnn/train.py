@@ -14,6 +14,7 @@ def train_model(model,
                 device = torch.device('cpu'),
                 model_states = ['train', 'val', 'hara'],
                 loss_func = l1_loss,
+                use_force_loss = {'train':[True,True], 'val':[True,True], 'hara':[False,False]},
                 return_best = False):
     '''
     Arg-s:
@@ -27,6 +28,14 @@ def train_model(model,
     - loss_func : loss function for training w/ reduction='mean'. Same loss function is
                   used for all var types (i.e. node, edge, cell).
                   Total batch losses are weighted by #nodes in each batch.
+    - use_force_loss: dict of states (from `model_states`) w/ lists of Booleans ([Tension, Pressure])
+                      for deciding whether to compute loss for a variable. Order of the Booleans in the
+                      list are as follows: `use_force_loss[state] = [tension, pressure]`.
+                      This arg. is useful when the dataset does not contain targets for certain variables
+                      (e.g. tensions and pressures in Hara movies) or when some variables are not needed
+                      (e.g. model only computes velocities). Note that `model` should still output a tuple.
+                      In order to ignore a variable, `model` could output `None` as an output and set corresponding
+                      `use_force_loss` entries for *all* states as `False`.
     '''
     assert num_epochs>0
     print(f'Training param-s:', end=' ')
@@ -55,8 +64,6 @@ def train_model(model,
     best_wts = None
     best_loss = 0.0
 
-    loss_func = loss_funcs[loss_metric]
-
     for epoch in range(num_epochs):
         print(f'Epoch {epoch}/{num_epochs - 1}', end=' : ')
         for state in model_states:
@@ -73,12 +80,13 @@ def train_model(model,
                 data = data.to(device)
                 optimizer.zero_grad() # zero grad accumulator
 
-                with torch.set_grad_enabled(state=='train' and metric==loss_metric):
+                with torch.set_grad_enabled(state=='train'):
                     X_vel, E_tens, C_pres = model(data) # outputs:(batch, #dims)
                     vel_loss    = loss_func(X_vel, data.y)
 
-                    tens_loss   = 0.0 if data.edge_tensions is None else loss_func(E_tens, data.edge_tensions)
-                    pres_loss   = 0.0 if data.cell_pressures is None else loss_func(C_pres, data.cell_pressures)
+                    tens_loss   = loss_func(E_tens, data.edge_tensions) if use_force_loss[state][0] else 0.0
+
+                    pres_loss   = loss_func(C_pres, data.cell_pressures) if use_force_loss[state][1] else 0.0
 
                     loss = vel_loss + tens_loss + pres_loss # total loss
 
@@ -93,11 +101,11 @@ def train_model(model,
                 running_losses[f'{state}_loss_total'] += loss.item()*data.x.size(0)
                 n_samples[f'{state}_loss_total'] += data.x.size(0)
 
-                if data.edge_tensions is not None:
+                if use_force_loss[state][0]:
                     running_losses[f'{state}_loss_tens'] += tens_loss.item()*data.edge_tensions.size(0)
                     n_samples[f'{state}_loss_tens'] += data.edge_tensions.size(0)
 
-                if data.cell_pressures is not None:
+                if use_force_loss[state][1]:
                     running_losses[f'{state}_loss_pres'] += pres_loss.item()*data.cell_pressures.size(0)
                     n_samples[f'{state}_loss_pres'] += data.cell_pressures.size(0)
 
