@@ -125,3 +125,23 @@ class ScalePressure(ScaleTension):
         if data.cell_pressures is not None:
             data.cell_pressures = (data.cell_pressures - self.shift)/self.scale
         return data
+
+
+class Reshape_x(object):
+    '''
+    Reshapes attribute `x` (e.g. data.x) using a given shape.
+    '''
+    def __init__(self, shape):
+        '''
+        Arg-s:
+        - shape : new shape for attribute `x`.
+        '''
+        self.shape = shape
+    def __call__(self, data):
+        '''
+        - data : an input graph.
+        '''
+        data.x = data.x.reshape(self.shape)
+        return data
+    def __repr__(self):
+        return '{}({})'.format(self.__class__.__name__, self.shape)
