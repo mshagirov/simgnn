@@ -6,22 +6,22 @@ class mlp(torch.nn.Module):
     '''
     MLP consisting of multiple linear layers w/ activation func-s (`Fn`). Last layer is always linear layer w/o activation.
     '''
-    
+
     def __init__(self, in_features, out_features, hidden_dims=[], dropout_p=0, Fn=ReLU, Fn_kwargs={}):
         '''
         - in_features : input dim-s.
-        - out_features: output dim-s. 
+        - out_features: output dim-s.
         - hidden_dims : a list of hidden dim-s (number of hidden layer neurons) {default : [] an empty list, i.e. no hidden layers}
         - dropout_p   : dropout prob-y for hidden layer(s) {default :  0}.
         - Fn : activation function for hidden layers { default: ReLU }
         - Fn_kwargs : keyword arg-s for `Fn` {default : an empty dict.}
-        
+
         NOTE: The last layer is always linear, i.e. it has no dropout and activation.
         '''
         super(mlp, self).__init__()
-        
+
         layers_in = [in_features] + hidden_dims # in_features for all layers
-        
+
         layers = []
         for l, hn in enumerate(hidden_dims):
             layers.append( Linear( layers_in[l], hn)) #append first and hidden layers
@@ -29,22 +29,22 @@ class mlp(torch.nn.Module):
             if dropout_p:
                 layers.append( Dropout(p=dropout_p))
         layers.append( Linear( layers_in[-1], out_features))
-        
+
         self.layers = Sequential(*layers)
-    
+
     def forward(self, x):
         return self.layers(x)
 
 
 class Message(torch.nn.Module):
     '''Updates a graph's edge features by computing messages `mlp([x_src, x_tgt, edge_attr])--> new edge_attr`.'''
-    
+
     def __init__(self, in_features, out_features, **mlp_kwargs):
         '''
         MLP Arg-s:
         - in_features : input dim-s == `#src_features` + `#tgt_features` + `#edge_features`.
-        - out_features: output dim-s, e.g. `#edge_features`. 
-        
+        - out_features: output dim-s, e.g. `#edge_features`.
+
         Optional kwargs for `mlp`: hidden_dims =[], dropout_p = 0, Fn = ReLU, Fn_kwargs = {}.
         '''
         super(Message, self).__init__()
@@ -60,14 +60,14 @@ class Message(torch.nn.Module):
 
 class AggregateUpdate(torch.nn.Module):
     '''Aggregates messages (`edge_attr`) from neighbouring nodes and updates node attributes.'''
-    
+
     def __init__(self, in_features, out_features, aggr='mean', **mlp_kwargs):
         '''
         Arg-s:
         - in_features : input dim-s == `#node_features + #edge_features`. (MLP for updating x:node_features)
         - out_features: output dim-s, updated node fetaures, `#new_node_features`. (MLP for updating x:node_features)
         - aggr : aggregation scheme, one of `['sum', 'mul', 'mean', 'min', 'max']` {default: 'mean'}.
-        
+
         Optional kwargs for `mlp`: hidden_dims =[], dropout_p = 0, Fn = ReLU, Fn_kwargs = {}.
         '''
         super(AggregateUpdate, self).__init__()
@@ -90,7 +90,7 @@ class AggregateUpdate(torch.nn.Module):
 
 class Aggregate(torch.nn.Module):
     '''Aggregates messages (`edge_attr`) from neighbouring nodes.'''
-    
+
     def __init__(self, aggr='mean'):
         '''
         Arg-s:
@@ -109,3 +109,22 @@ class Aggregate(torch.nn.Module):
         out = scatter(edge_attr, edge_index[1], dim=0, dim_size=dim_size, reduce=self.aggr) # aggregate mssgs at "targets"
         return out
 
+
+class Plain_MLP(torch.nn.Module):
+    '''Simple MLP for processing pt-geometric graph vertex features `data.x`.
+
+    Returns tuple (y_pred, None, None):
+    - y_pred: is an output of `y_pred = MLP(data.x)`.
+    - The two nones are just place holders to make MLP compatible with training function in `train.py`.
+    '''
+    def __init__(self, in_features=10, out_features=2, **mlp_kwargs):
+        '''
+        MLP Arg-s:
+        - in_features : #input features
+        - out_features: #output features
+        - Optional kwargs for `mlp`: hidden_dims =[], dropout_p = 0, Fn = ReLU, Fn_kwargs = {}.
+        '''
+        super(Plain_MLP, self).__init__()
+        self.mlp = mlp(in_features, out_features, **mlp_kwargs)
+    def forward(self, data):
+        return self.mlp( data.x ), None, None

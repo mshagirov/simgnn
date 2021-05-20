@@ -1,6 +1,7 @@
 import time
 import copy
 import torch
+import pickle
 
 # Default loss functions
 mse_loss = torch.nn.MSELoss(reduction='mean')
@@ -41,7 +42,7 @@ def train_model(model,
     print(f'Training param-s:', end=' ')
 
     # init loss tracking
-    loss_categories = ['total','vel', 'tens', 'pres']
+    loss_categories = ['tot','y', 'T', 'P']
 
     train_log = {state+'_loss_'+k: [] for state in model_states for k in loss_categories}
     running_losses = {k:0.0 for k in train_log}
@@ -94,37 +95,37 @@ def train_model(model,
                         loss.backward()
                         optimizer.step()
                 # accumulate losses
-                running_losses[f'{state}_loss_vel'] += vel_loss.item()*data.x.size(0)
-                n_samples[f'{state}_loss_vel'] += data.x.size(0)
+                running_losses[f'{state}_loss_y'] += vel_loss.item()*data.x.size(0)
+                n_samples[f'{state}_loss_y'] += data.x.size(0)
 
                 # total loss values are valid only for datasets w/ all variable
-                running_losses[f'{state}_loss_total'] += loss.item()*data.x.size(0)
-                n_samples[f'{state}_loss_total'] += data.x.size(0)
+                running_losses[f'{state}_loss_tot'] += loss.item()*data.x.size(0)
+                n_samples[f'{state}_loss_tot'] += data.x.size(0)
 
                 if use_force_loss[state][0]:
-                    running_losses[f'{state}_loss_tens'] += tens_loss.item()*data.edge_tensions.size(0)
-                    n_samples[f'{state}_loss_tens'] += data.edge_tensions.size(0)
+                    running_losses[f'{state}_loss_T'] += tens_loss.item()*data.edge_tensions.size(0)
+                    n_samples[f'{state}_loss_T'] += data.edge_tensions.size(0)
 
                 if use_force_loss[state][1]:
-                    running_losses[f'{state}_loss_pres'] += pres_loss.item()*data.cell_pressures.size(0)
-                    n_samples[f'{state}_loss_pres'] += data.cell_pressures.size(0)
+                    running_losses[f'{state}_loss_P'] += pres_loss.item()*data.cell_pressures.size(0)
+                    n_samples[f'{state}_loss_P'] += data.cell_pressures.size(0)
 
             for k in loss_categories:
                 # log losses for dataset==state
                 if n_samples[f'{state}_loss_{k}']<1:
-                    print(f"{state}_loss_{k}=nil",end='; ')
+                    #print(f"{state}_loss_{k}=NA",end='; ')
                     continue
                 train_log[f'{state}_loss_{k}'].append( running_losses[f'{state}_loss_{k}']/n_samples[f'{state}_loss_{k}'])
                 print(f"{state}_loss_{k}={train_log[f'{state}_loss_{k}'][-1]:.4f}",end='; ')
-            print('| ',end='')
+            print('|',end='')
 
             if state == 'val' and epoch==0 :
-                best_loss = train_log['val_loss_total'][-1]
+                best_loss = train_log['val_loss_tot'][-1]
                 if return_best:
                     best_wts = copy.deepcopy(model.state_dict()) # best weights
 
-            if state == 'val' and train_log['val_loss_total'][-1] < best_loss:
-                best_loss = train_log['val_loss_total'][-1]
+            if state == 'val' and train_log['val_loss_tot'][-1] < best_loss:
+                best_loss = train_log['val_loss_tot'][-1]
                 if return_best:
                     best_wts = copy.deepcopy(model.state_dict()) # best weights
 
@@ -136,9 +137,26 @@ def train_model(model,
 
     time_elapsed = time.time() - time_start
     print(f'Total elapsed time : {time_elapsed//60:.0f}m {time_elapsed % 60:.0f}s')
-    print(f'Best val Acc: {best_acc:4f} (return best:{return_best})')
+    print(f'Best val loss: {best_loss:4f} (return best:{return_best})')
 
     if return_best:
         model.load_state_dict(best_wts) # load best model weights
 
     return model, train_log
+
+
+def write_log(fpath, train_log):
+    '''
+    Write training log dict as a pickle file.
+    Arg-s:
+    - fpath: location to write the file, e.g. 'train_log.pkl'.
+    - train_log: a python dict w/ training logs.
+    '''
+    with open(fpath, 'wb') as f:
+        pickle.dump(train_log, f)
+
+def load_log(fpath):
+    '''Load training log dict from a pickle file ('*.pkl').'''
+    with open(fpath, 'rb') as f:
+        train_log = pickle.load(f)
+    return train_log
