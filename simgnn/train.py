@@ -66,7 +66,7 @@ def train_model(model,
     best_loss = 0.0
 
     for epoch in range(num_epochs):
-        print(f'Epoch {epoch}/{num_epochs - 1}', end=' : ')
+        print(f'Epoch {epoch}/{num_epochs - 1}: ', end='')
         for state in model_states:
             if state == 'train':
                 model.train() # training mode
