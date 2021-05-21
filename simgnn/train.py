@@ -51,13 +51,16 @@ def train_model(model,
     # logs
     train_log['total_epochs'] = num_epochs
     train_log['loss_func'] = loss_func.__repr__()
-    train_log['optimizer'] = optimizer.__repr__()
+    train_log['optimizer'] = optimizer.__class__.__name__
+    train_log['optimizer_params'] = optimizer.__repr__()
+    train_log['batch_size'] = data_loaders['train'].batch_size
     train_log['scheduler'] = 'none' if scheduler is None else scheduler.__class__.__name__
     train_log['scheduler_params'] = 'none' if scheduler is None else scheduler.state_dict().__repr__()
     train_log['return_best'] = return_best
     train_log['model'] = model.__repr__()
 
     print(f"#epochs={num_epochs}, metric={train_log['loss_func']}, "+
+          f"batch_size={train_log['batch_size']}"+
           f"optim={train_log['optimizer']}, sch-r={train_log['scheduler']}, "+
           f"return_best={train_log['return_best']}",end="\n---\n")
 
