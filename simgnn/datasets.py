@@ -64,8 +64,9 @@ class VertexDynamics(Dataset):
         - root : path to a root directory that contains folder with raw dataset(s) in a folder named "raw".
         Raw datasets should be placed into separate folders each containing outputs from a single simulation.
         E.g. root contains ["raw", "processed", ...], and in folder "raw/" we should have ["simul1", "simul2", ...]
-        - window_size : number of past velocities to be used as node features
-        `[x(T+0)-x(T-1), x(T-1)-x(T-2),..., x(T-window_size+1)-x(T-window_size)]`, where `x(T)` is node position at time `T`.
+        - window_size : number of past velocities to be used as node features ordered from `T-window_size` to `T-1`
+                       `[x(T-window_size+1)-x(T-window_size),..., x(T-1)-x(T-2), x(T+0)-x(T-1)]`, where `x(T)` is
+                       node position at time `T`. For more details see method `VertexDynamics.pos2nodeXY()`.
         - transform :  transform(s) for graph datasets (e.g. from torch_geometric.transforms ), used in parent class' loading method.
         - pre_transform : transform(s) for data pre-processing (resulting graphs are saved in "preprocessed" folder)
         and used as this dataset's sample graphs.
@@ -291,8 +292,9 @@ class HaraMovies(VertexDynamics):
         - root : path to a root directory that contains folder with raw dataset(s) in a folder named "raw".
         Raw datasets should be placed into separate folders each containing outputs from a single simulation.
         E.g. root contains ["raw", "processed", ...], and in folder "raw/" we should have ["simul1", "simul2", ...]
-        - window_size : number of past velocities to be used as node features
-        `[x(T+0)-x(T-1), x(T-1)-x(T-2),..., x(T-window_size+1)-x(T-window_size)]`, where `x(T)` is node position at time `T`.
+        - window_size : number of past velocities to be used as node features ordered from `T-window_size` to `T-1`
+                       `[x(T-window_size+1)-x(T-window_size),..., x(T-1)-x(T-2), x(T+0)-x(T-1)]`, where `x(T)` is
+                       node position at time `T`. For more details see method `VertexDynamics.pos2nodeXY()`.
         - transform :  transform(s) for graph datasets (e.g. from torch_geometric.transforms ), used in parent class' loading method.
         - pre_transform : transform(s) for data pre-processing (resulting graphs are saved in "preprocessed" folder)
         and used as this dataset's sample graphs.
