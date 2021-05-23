@@ -8,6 +8,22 @@ from simgnn.datautils import load_array, load_graph
 
 dtype = torch.float32
 
+
+def persistence_loss(graph_dataset):
+    '''
+    Computes a simple error for a prediction x_pos[T+0] = x_pos[T+1], i.e. velocity==0.
+
+    Each elem-t in `graph_dataset` (an iterable) must contain T+0 node velocities in `graph_dataset[i].y`.
+
+    velocity : dx[T+0] = x_pos[T+Lag] - x_pos[T+0] (generally Lag==1)
+    persistence : loss(x_pos[T+0], x_pos[T+Lag]) = f(x_pos[T+Lag] - x[T+0]) <=> loss=f(dx[T+0]) | loss \in {MAE, MSE, RMSE}
+    '''
+    dx_T0 = torch.cat([data.y for data in graph_dataset],axis=0)
+    persistence_mae = np.mean(np.abs(dx_T0.numpy()))
+    persistence_mse = np.mean(dx_T0.numpy()**2)
+    return {'mae':persistence_mae, 'mse':persistence_mse}
+
+
 class CellData(Data):
     '''Cell monolayer graph data object. Same as `Data` but with cells.'''
     def __init__(self, y_cell=None, num_cells=None,
