@@ -17,6 +17,9 @@ def persistence_loss(graph_dataset):
 
     velocity : dx[T+0] = x_pos[T+Lag] - x_pos[T+0] (generally Lag==1)
     persistence : loss(x_pos[T+0], x_pos[T+Lag]) = f(x_pos[T+Lag] - x[T+0]) <=> loss=f(dx[T+0]) | loss \in {MAE, MSE, RMSE}
+
+    Returns:
+        Dictionary {'mae':persistence_mae, 'mse':persistence_mse}
     '''
     dx_T0 = torch.cat([data.y for data in graph_dataset],axis=0)
     persistence_mae = np.mean(np.abs(dx_T0.numpy()))
