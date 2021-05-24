@@ -60,7 +60,7 @@ def train_model(model,
     train_log['model'] = model.__repr__()
 
     print(f"#epochs={num_epochs}, metric={train_log['loss_func']}, "+
-          f"batch_size={train_log['batch_size']}"+
+          f"batch_size={train_log['batch_size']}, "+
           f"optim={train_log['optimizer']}, sch-r={train_log['scheduler']}, "+
           f"return_best={train_log['return_best']}",end="\n---\n")
 
