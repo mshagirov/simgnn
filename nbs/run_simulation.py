@@ -20,7 +20,7 @@ SIM_SAVE_DIR='./simgnn_data/single_distr_sims/raw'
 
 N_sim_runs = 8
 
-T=8000 # total number of iter-s
+T=6100 # total number of iter-s
 delta_T=0.00165 # time step
 sample_freq=100 # movie frame_rate = sample_freq x delta_T
 
@@ -36,7 +36,7 @@ for sim_k in range(N_sim_runs):
     torch.manual_seed(42 + sim_k);
 
     sim_name = datetime.datetime.now().strftime('%d%m%Y')+f'_sim{sim_k:03}'
-    tissue_shape = rngs[sim_k].choice([8,16,32],(2,))
+    tissue_shape = rngs[sim_k].choice([8,10,16],(2,))
 
     v_x,regions = unit_hexagons(tissue_shape[0], tissue_shape[1]) # unit hexagons
     v_x += rngs[0].standard_normal(size=(v_x.shape[0], v_x.shape[1]))*.2 #perturb vertices
@@ -120,3 +120,5 @@ for sim_k in range(N_sim_runs):
         for k in p:
             # k: name of param
             write_array(path.join(dataDir,f'simul_{k}.npy'),p[k])
+
+print('--- Done ---')
