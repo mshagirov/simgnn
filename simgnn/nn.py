@@ -58,6 +58,32 @@ class Message(torch.nn.Module):
         return self.mlp( torch.cat( [src, tgt, edge_attr], 1) )
 
 
+class DiffMessage(torch.nn.Module):
+    '''
+    Updates a graph's edge features by computing messages `mlp([ x_tgt - x_src, edge_attr])--> new edge_attr`.
+
+    Uses differences in x_tgt - x_src rather than concatenating them.
+    '''
+
+    def __init__(self, in_features, out_features, **mlp_kwargs):
+        '''
+        MLP Arg-s:
+        - in_features : input dim-s == `#src_features` + `#edge_features`. Assumes `#tgt_features`==`#src_features`.
+        - out_features: output dim-s, e.g. `#edge_features`.
+
+        Optional kwargs for `mlp`: hidden_dims =[], dropout_p = 0, Fn = ReLU, Fn_kwargs = {}.
+        '''
+        super(DiffMessage, self).__init__()
+        self.mlp = mlp(in_features, out_features, **mlp_kwargs)
+
+    def forward(self, src, tgt, edge_attr):
+        '''
+        - src, tgt : source and target features w/ shapes (#edges, #src_features) and (#edges, #tgt_features)
+        - edge_attr : edge features w/ shape (#edges, #edge_features)
+        '''
+        return self.mlp( torch.cat( [tgt - src, edge_attr], 1) )
+
+
 class AggregateUpdate(torch.nn.Module):
     '''Aggregates messages (`edge_attr`) from neighbouring nodes and updates node attributes.'''
 
@@ -137,25 +163,25 @@ class Single_MP_step(torch.nn.Module):
     - The two `None`s are just place holders to make model compatible with training function in `train.py`.
     '''
     def __init__(self, node_in_features=10, node_out_features=2, edge_in_features=2,
-                 message_out_features=5, message_hidden_dims=[10], update_hidden_dims = [], **mlp_kwargs):
+                 message_out_features=5, message_hidden_dims=[10], update_hidden_dims = [],aggr='mean', **mlp_kwargs):
         '''
         Arg-s:
         - node_in_features : #input node features
         - node_out_features: #output node features
         - edge_in_features : #input edge features
         - message_out_features : #message features (edge-wise messages, can be considered as new or intermediate edge features )
-        - message_hidden_dims : list of #dims for message MLP=phi. For edge s->t: m_st = phi([x_s, x_t, e_st]).
+        - message_hidden_dims : list of #dims for message MLP=phi. For edge s->t: m_st = phi([x_t - x_s, e_st]).
         - update_hidden_dims : list of #dims for update MLP=gamma. For node i : x_i' = gamma(x_i, Aggregate(m_si))
         - Optional kwargs for both MLPs: defaults are `dropout_p = 0`, `Fn = ReLU`, `Fn_kwargs = {}`.
         '''
         super(Single_MP_step, self).__init__()
 
-        self.message = Message(node_in_features*2+edge_in_features,
-                               message_out_features,
-                               hidden_dims=message_hidden_dims, **mlp_kwargs)
+        self.message = DiffMessage(node_in_features+edge_in_features,
+                                   message_out_features,
+                                   hidden_dims=message_hidden_dims, **mlp_kwargs)
         self.relu = torch.nn.ReLU()
         self.aggr_update = AggregateUpdate(node_in_features+message_out_features,
-                                           node_out_features, hidden_dims=update_hidden_dims, **mlp_kwargs)
+                                           node_out_features, hidden_dims=update_hidden_dims, aggr=aggr, **mlp_kwargs)
 
     def forward(self, data):
         # convert to undirected graph : cat([e_ij, e_ji])
