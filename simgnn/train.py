@@ -227,11 +227,11 @@ def predict_batch(model, data_loaders,
             X_vel_datasets[name].append(outputs[0].cpu())
             X_vel_targets[name].append(data.y.cpu())
             
-            if outputs[1] is not None:
+            if (outputs[1] is not None) and (data.edge_tensions is not None):
                 E_tens_datasets[name].append(outputs[1].cpu())
                 E_tens_targets[name].append(data.edge_tensions.cpu())
                 
-            if outputs[2] is not None:
+            if (outputs[2] is not None) and (data.cell_pressures is not None):
                 C_pres_datasets[name].append(outputs[2].cpu())
                 C_pres_targets[name].append(data.cell_pressures.cpu())
             
