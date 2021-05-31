@@ -85,7 +85,7 @@ def train_model(model,
                 optimizer.zero_grad() # zero grad accumulator
 
                 with torch.set_grad_enabled(state=='train'):
-                    X_vel, E_tens, C_pres = model(data) # outputs:(batch, #dims)
+                    X_vel, E_tens, C_pres = model(data) # outputs:(#nodes/#edges/#cells, #dims)
                     vel_loss    = loss_func(X_vel, data.y)
 
                     tens_loss   = loss_func(E_tens, data.edge_tensions) if use_force_loss[state][0] else 0.0
@@ -163,3 +163,105 @@ def load_log(fpath):
     with open(fpath, 'rb') as f:
         train_log = pickle.load(f)
     return train_log
+
+
+def predict(model, input_data, loss_func=l1_loss,
+            use_force_loss = [True,True],
+            return_losses = True,
+            device=torch.device('cpu')):
+    '''
+    Arg-s: model, input_data, loss_func, device
+    
+    Returns: outputs, losses
+    - outputs : tuple (X_vel, E_tens, C_pres)
+    - losses : tuple (vel_loss, tens_loss, pres_loss, loss) {optional : return_losses=True}
+    '''
+    input_data = input_data.to(device)
+    model.eval() # evaluation mode
+    with torch.set_grad_enabled(False):
+        X_vel, E_tens, C_pres = model(input_data) # shapes: (#nodes/#edges/#cells, #dims)
+        
+        if not return_losses:
+            return (X_vel, E_tens, C_pres), None
+        
+        vel_loss    = loss_func(X_vel, input_data.y)
+        tens_loss   = loss_func(E_tens, input_data.edge_tensions) if use_force_loss[0] else 0.0
+        pres_loss   = loss_func(C_pres, input_data.cell_pressures) if use_force_loss[1] else 0.0
+        loss = vel_loss + tens_loss + pres_loss # total loss
+    
+    return (X_vel, E_tens, C_pres), (vel_loss, tens_loss, pres_loss, loss)
+
+
+def predict_batch(model, data_loaders,
+                  loss_func = l1_loss,
+                  use_force_loss = {'train':[True,True], 'val':[True,True], 'hara':[False,False]},
+                  return_losses = True,
+                  device = torch.device('cpu')):
+    '''
+    Returns:
+    - outputs : tuple (X_vel, E_tens, C_pres)
+    - targets : tuple (X_vel_targets, E_tens_targets, C_pres_targets) 
+    - running_losses : dict of losses for input dataset loaders. Returns if return_losses is "True".
+    '''
+    # init loss tracking
+    if return_losses:
+        loss_categories = ['tot','y', 'T', 'P']
+        loss_names = [f"{name}_loss_{k}" for name in data_loaders for k in loss_categories ]
+        running_losses = {k:0.0 for k in loss_names}
+        n_samples = {k:0.0 for k in loss_names}
+    
+    # predcitions
+    X_vel_datasets = {name:[] for name in data_loaders}
+    E_tens_datasets = {name:[] for name in data_loaders}
+    C_pres_datasets = {name:[] for name in data_loaders}
+    # true answers
+    X_vel_targets = {name:[] for name in data_loaders}
+    E_tens_targets = {name:[] for name in data_loaders}
+    C_pres_targets = {name:[] for name in data_loaders}
+    
+    for name in data_loaders:
+        for data in data_loaders[name]:
+            outputs, losses = predict(model, data, loss_func=loss_func,
+                                      use_force_loss = use_force_loss[name],
+                                      return_losses = return_losses, device=device)
+            X_vel_datasets[name].append(outputs[0].cpu())
+            X_vel_targets[name].append(data.y.cpu())
+            
+            if outputs[1] is not None:
+                E_tens_datasets[name].append(outputs[1].cpu())
+                E_tens_targets[name].append(data.edge_tensions.cpu())
+                
+            if outputs[2] is not None:
+                C_pres_datasets[name].append(outputs[2].cpu())
+                C_pres_targets[name].append(data.cell_pressures.cpu())
+            
+            # loss tracking
+            if return_losses:
+                (vel_loss, tens_loss, pres_loss, tot_loss) = losses
+                # accumulate losses
+                running_losses[f'{name}_loss_y'] += vel_loss.item()*data.x.size(0)
+                n_samples[f'{name}_loss_y'] += data.x.size(0)
+
+                # total loss values weighted by #nodes in each graph batch
+                running_losses[f'{name}_loss_tot'] += tot_loss.item()*data.x.size(0)
+                n_samples[f'{name}_loss_tot'] += data.x.size(0)
+
+                if use_force_loss[name][0]:
+                    running_losses[f'{name}_loss_T'] += tens_loss.item()*data.edge_tensions.size(0)
+                    n_samples[f'{name}_loss_T'] += data.edge_tensions.size(0)
+
+                if use_force_loss[name][1]:
+                    running_losses[f'{name}_loss_P'] += pres_loss.item()*data.cell_pressures.size(0)
+                    n_samples[f'{name}_loss_P'] += data.cell_pressures.size(0)
+        # compute mean losses
+        if return_losses:
+            for k in loss_categories:
+                if n_samples[f'{name}_loss_{k}']<1:
+                    running_losses[f'{name}_loss_{k}']=None
+                    continue
+                running_losses[f'{name}_loss_{k}'] = running_losses[f'{name}_loss_{k}']/n_samples[f'{name}_loss_{k}']
+    
+    if return_losses:
+        return (X_vel_datasets, E_tens_datasets, C_pres_datasets), (X_vel_targets, E_tens_targets, C_pres_targets), running_losses
+    
+    return (X_vel_datasets, E_tens_datasets, C_pres_datasets), (X_vel_targets, E_tens_targets, C_pres_targets)
