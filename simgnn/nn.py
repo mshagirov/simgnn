@@ -197,3 +197,53 @@ class Single_MP_step(torch.nn.Module):
         # aggregate and update stages
         x_out = self.aggr_update( data.x, edge_index, m_ij) # leave last layer as linear, i.e. no ReLU()
         return x_out, None, None
+
+
+class SingleMP_Tension(torch.nn.Module):
+    '''
+    Returns tuple (y_pred, None, None):
+    - y_pred: is a node-wise output (e.g. node velocity)
+    - The two `None`s are just place holders to make model compatible with training function in `train.py`.
+    '''
+    def __init__(self, node_in_features=10, node_out_features=2, edge_in_features=2,
+                 message_out_features=5, message_hidden_dims=[10], update_hidden_dims = [],aggr='mean',
+                 tension_out_features=1, tension_hidden_dims=[5], **mlp_kwargs):
+        '''
+        Arg-s:
+        - node_in_features : #input node features
+        - node_out_features: #output node features
+        - edge_in_features : #input edge features
+        - message_out_features : #message features (edge-wise messages, can be considered as new or intermediate edge features )
+        - message_hidden_dims : list of #dims for message MLP=phi. For edge s->t: m_st = phi([x_t - x_s, e_st]).
+        - update_hidden_dims : list of #dims for update MLP=gamma. For node i : x_i' = gamma(x_i, Aggregate(m_si))
+        - Optional kwargs for both MLPs: defaults are `dropout_p = 0`, `Fn = ReLU`, `Fn_kwargs = {}`.
+        '''
+        super(SingleMP_Tension, self).__init__()
+
+        self.message = DiffMessage(node_in_features+edge_in_features,
+                                   message_out_features,
+                                   hidden_dims=message_hidden_dims, **mlp_kwargs)
+        self.relu = torch.nn.ReLU()
+        self.aggr_update = AggregateUpdate(node_in_features+message_out_features,
+                                           node_out_features, hidden_dims=update_hidden_dims, aggr=aggr, **mlp_kwargs)
+        self.tension_mlp = mlp(message_out_features, tension_out_features, 
+                               hidden_dims=tension_hidden_dims, **mlp_kwargs)
+
+    def forward(self, data):
+        # convert to undirected graph : cat([e_ij, e_ji])
+        edge_index = torch.cat([ data.edge_index, torch.stack([data.edge_index[1],
+                                                               data.edge_index[0]], dim=0) ], dim=1).contiguous()
+        # edge features for undirected graph : e_ij = - e_ji
+        edge_attr  = torch.cat([ data.edge_attr, -data.edge_attr], dim=0).contiguous()
+
+        # message
+        src, tgt = data.x[edge_index[0]], data.x[edge_index[1]] # src, tgt features
+        m_ij = self.relu( self.message(src, tgt, edge_attr) )
+
+        # aggregate and update stages
+        x_out = self.aggr_update( data.x, edge_index, m_ij) # leave last layer as linear, i.e. no ReLU()
+        
+        # tension model
+        e_out = self.tension_mlp(m_ij[:m_ij.size(0)//2,:] +  m_ij[m_ij.size(0)//2 :,:])
+        
+        return x_out, e_out.reshape((e_out.size(0),)), None
