@@ -119,7 +119,10 @@ def train_model(model,
                     #print(f"{state}_loss_{k}=NA",end='; ')
                     continue
                 train_log[f'{state}_loss_{k}'].append( running_losses[f'{state}_loss_{k}']/n_samples[f'{state}_loss_{k}'])
-                print(f"{state}_loss_{k}={train_log[f'{state}_loss_{k}'][-1]:.4f}",end='; ')
+                # print all losses for 'train' and only total loss for others. 
+                if state!='train' and k!='tot':
+                    continue
+                print(f"{state}_loss_{k}={train_log[f'{state}_loss_{k}'][-1]:8.4g}",end='; ')
             print('|',end='')
 
             if state == 'val' and epoch==0 :
