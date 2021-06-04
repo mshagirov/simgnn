@@ -4,7 +4,7 @@ from glob import glob
 import torch
 import numpy as np
 from torch_geometric.data import Dataset, Data
-from simgnn.datautils import load_array, load_graph
+from simgnn.datautils import simple_moving_average, load_array, load_graph
 
 dtype = torch.float32
 
@@ -70,7 +70,7 @@ class CellData(Data):
 class VertexDynamics(Dataset):
     '''For processing and working with vertex dynamics simulation output files.'''
 
-    def __init__(self, root, window_size=5, transform=None, pre_transform=None):
+    def __init__(self, root, window_size=5, transform=None, pre_transform=None, smoothing=False, sma_lag_time=None):
         '''
         Assumes `root` dir contains folder named `raw` with all vertex dynamics simulation results
         for tracing vertex trajectories, building graphs, and variables for computing edge tensions
@@ -89,11 +89,16 @@ class VertexDynamics(Dataset):
         - transform :  transform(s) for graph datasets (e.g. from torch_geometric.transforms ), used in parent class' loading method.
         - pre_transform : transform(s) for data pre-processing (resulting graphs are saved in "preprocessed" folder)
         and used as this dataset's sample graphs.
+        - smoothing: If `True`, apply simple moving average on vertex positions. Computes `mean(x[T-sma_lag_time:T])`
+                     along time dimension (must be axis=0 in vertex positions array).
+        - sma_lag_time: a smoothing parameter, number of *past* vertex positions to use in computing average position.
         '''
         self.raw_dir_path = path.join(root,'raw')
         assert path.isdir(self.raw_dir_path), f'Folder "{root}" does not contain folder named "raw".'
 
         self.window_size = window_size
+        self.smoothing=smoothing
+        self.sma_lag_time = sma_lag_time
 
         super(VertexDynamics, self).__init__(root, transform, pre_transform)
         # super's __init__ runs process() [and download() if defined].
@@ -198,6 +203,10 @@ class VertexDynamics(Dataset):
         '''
         # vertex trajectories:(Frames,Vertices,Dims)=TxNx2
         vx_pos = load_array(pos_path) #TxNx2
+
+        if self.smoothing:
+            vx_pos = simple_moving_average(vx_pos, self.sma_lag_time)
+
         vx_vel = np.diff(vx_pos,n=1,axis=0) # velocity(1st diff approx):(T-1)xNx2
 
         # T+0 vertex positions
