@@ -306,7 +306,7 @@ class HaraMovies(VertexDynamics):
     and cell pressures, otherwise it is similar to the VertexDynamics dataset.
     '''
 
-    def __init__(self, root, window_size=5, transform=None, pre_transform=None):
+    def __init__(self, root, window_size=5, transform=None, pre_transform=None, smoothing=False, sma_lag_time=None):
         '''
         Assumes `root` dir contains folder named `raw` with following files that contain results
         for tracing vertex trajectories, building graphs:
@@ -332,7 +332,8 @@ class HaraMovies(VertexDynamics):
           `velocity(T+0) = x(T+1) - x(T+0)`.
         - Use `pre_transform` for normalising and pre-processing dataset(s).
         '''
-        super(HaraMovies, self).__init__(root, window_size, transform, pre_transform)
+        super(HaraMovies, self).__init__(root, window_size=window_size, transform=transform, pre_transform=pre_transform,
+                                         smoothing=smoothing, sma_lag_time=sma_lag_time)
 
     @property
     def processed_file_names(self):
