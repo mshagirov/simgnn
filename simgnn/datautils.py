@@ -3,6 +3,16 @@ import numpy as np
 import pickle
 from os import mkdir
 
+
+def simple_moving_average(vtxpos,lag_time=5):
+    '''Compute simple moving average along time axis, which is assumed to be the first axis (axis=0).'''
+    vtxpos_sma = np.zeros_like(vtxpos)
+    vtxpos_sma[0] = vtxpos[0]
+    for t in range(1,vtxpos.shape[0]):
+        vtxpos_sma[t] = vtxpos[max([t-lag_time, 0]):t].mean(axis=0)
+    return vtxpos_sma
+
+
 def mknewdir(dirpath):
     '''mkdir but prints that dir already exists instead of throwing exception.
     - Returns 1 (int) if dir already exists, or returns None otherwise.
