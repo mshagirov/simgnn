@@ -4,12 +4,18 @@ import pickle
 from os import mkdir
 
 
-def simple_moving_average(vtxpos,lag_time=5):
-    '''Compute simple moving average along time axis, which is assumed to be the first axis (axis=0).'''
+def simple_moving_average(vtxpos,lag_time=4):
+    '''
+    Compute simple moving average along time axis, which is assumed to be the first axis (axis=0).
+    
+    - lag_time : lag time for past values, or a number of past values to use. For a moving average
+                 at time `t`, `lagtime+1` values (including the current value x[t]), i.e.
+                 `{ x[t-lagtime], x[t+1-lagtime], ..., x[t]}` are used.
+    '''
     vtxpos_sma = np.zeros_like(vtxpos)
     vtxpos_sma[0] = vtxpos[0]
     for t in range(1,vtxpos.shape[0]):
-        vtxpos_sma[t] = vtxpos[max([t-lag_time, 0]):t].mean(axis=0)
+        vtxpos_sma[t] = vtxpos[max([t-lag_time, 0]):t+1].mean(axis=0)
     return vtxpos_sma
 
 

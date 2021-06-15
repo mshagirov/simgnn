@@ -89,9 +89,11 @@ class VertexDynamics(Dataset):
         - transform :  transform(s) for graph datasets (e.g. from torch_geometric.transforms ), used in parent class' loading method.
         - pre_transform : transform(s) for data pre-processing (resulting graphs are saved in "preprocessed" folder)
         and used as this dataset's sample graphs.
-        - smoothing: If `True`, apply simple moving average on vertex positions. Computes `mean(x[T-sma_lag_time:T])`
+        - smoothing: If `True`, apply simple moving average on vertex positions. Computes `mean(x[T-sma_lag_time:T+1])`
                      along time dimension (must be axis=0 in vertex positions array).
-        - sma_lag_time: a smoothing parameter, number of *past* vertex positions to use in computing average position.
+        - sma_lag_time: a smoothing parameter, number of *past* vertex positions to use together with a current one in computing a current
+                        average position (expected vertex position). Use this to denoise the vertex trajectories. The current expected 
+                        vertex position is approximated as `mean({x[T-sma_lag_time], ..., x[T-1], x[T]})` (with available values).
         '''
         self.raw_dir_path = path.join(root,'raw')
         assert path.isdir(self.raw_dir_path), f'Folder "{root}" does not contain folder named "raw".'
