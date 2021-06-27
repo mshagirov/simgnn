@@ -30,6 +30,17 @@ def read_tiff_stack(filepath, trim_bound = True):
         imgstack[:,:,-1]= 0
     return imgstack
 
+def trim_bound_pixels(mask_img):
+    '''
+    Sets boundary pixels to zeroes.
+
+    mask_img: binary image, a mask image with intensity values \in {0,255}
+    '''
+    mask_img[:,0]=0
+    mask_img[:,-1]=0
+    mask_img[0,:]=0
+    mask_img[-1,:]=0
+    return mask_img
 
 def rm_small_holes(imgstack, area_threshold=2,connectivity=1):
     '''Remove small holes in image slices/frames w/ `skimage.morphology.remove_small_holes`.'''
