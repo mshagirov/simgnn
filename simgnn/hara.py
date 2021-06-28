@@ -98,14 +98,16 @@ def get_cell_labels(img):
 
     return labels,cellxy
 
-def get_roi_cell_labels(img, v1_pos, v2_pos, min_roi_radius = 15):
+def get_roi_cell_labels(img, v1_pos, v2_pos, s=1.0, min_roi_radius = 15):
     '''
-    Labels cells within half edge distance (approx.) to the fiducial vertices tracked for recoil measurement.
+    Labels cells within a distance `s*l_e` (approx.) to the fiducial vertices tracked for recoil measurement, where
+    `l_e` is a distance between fiducial vertices.
 
     Arg-s:
-        - img : binary image with pixel values in {0,255} (0:background, 255: foreground).
+        - img : cell boundaries image with pixel values in {0,255} (0:background, 255: foreground).
         - v1_pos: first fiducial vertex position in pixels, numpy array w/ shape (2,) : [x1, y1].
         - v2_pos: second fiducial vertex position in pixels, numpy array : [x2, y2].
+        - s : scaling constant, e.g. s=1 uses full l_e (larger roi near fiducials).
         - min_roi_radius: minimum half edge distance. If v1-v2 distance is too small min_roi_radius
                           is used as the "half edge distance".
     Returns:
@@ -119,16 +121,16 @@ def get_roi_cell_labels(img, v1_pos, v2_pos, min_roi_radius = 15):
     Ls, Cpos = get_cell_labels(img) # this might contain too many cells for manual tracking
 
     # half edge distance (approx): keep labels within this dist. from the fiducials
-    half_dist = round(np.sqrt(((v1_pos - v2_pos)**2).sum())/2)
-    half_dist = max([half_dist,15]) # set minimum roi radius to 15pix
+    roi_dist = round(s*np.sqrt(((v1_pos - v2_pos)**2).sum()))
+    roi_dist = max([roi_dist,15]) # set minimum roi radius to 15pix
 
     # fiducial roi bounds: image axes 0->vertical, 1->horizontal
     # v1 : [ax0min,ax0max,ax1min,ax1max]
-    fid1_bounds = [max([round(v1_pos[1])-half_dist,0]), min([round(v1_pos[1])+half_dist+1,img_shape[0]]),
-                   max([round(v1_pos[0])-half_dist,0]), min([round(v1_pos[0])+half_dist+1,img_shape[1]])]
+    fid1_bounds = [max([round(v1_pos[1])-roi_dist,0]), min([round(v1_pos[1])+roi_dist+1,img_shape[0]]),
+                   max([round(v1_pos[0])-roi_dist,0]), min([round(v1_pos[0])+roi_dist+1,img_shape[1]])]
     # v2 : [ax0min,ax0max,ax1min,ax1max]
-    fid2_bounds = [max([round(v2_pos[1])-half_dist,0]), min([round(v2_pos[1])+half_dist+1,img_shape[0]]),
-                   max([round(v2_pos[0])-half_dist,0]), min([round(v2_pos[0])+half_dist+1,img_shape[0]])]
+    fid2_bounds = [max([round(v2_pos[1])-roi_dist,0]), min([round(v2_pos[1])+roi_dist+1,img_shape[0]]),
+                   max([round(v2_pos[0])-roi_dist,0]), min([round(v2_pos[0])+roi_dist+1,img_shape[0]])]
 
     # Select cell labels near two fiducials
     L_roi = np.unique(Ls[fid1_bounds[0]:fid1_bounds[1],fid1_bounds[2]:fid1_bounds[3]]).tolist()
@@ -301,7 +303,7 @@ def label_bw_stack(imgstack):
 
 def get_node_locations(labels,xbound,ybound):
     '''
-    Find tri-cellular junction nodes in labelled images (labels==cells), for not labeled images see `get_node_mask()`.
+    Find tri-cellular junction nodes in labelled images (labels==cells).
 
     Nodes -- boundary point with more that 2 labels, i.e. more than 2 cells.
 
