@@ -98,6 +98,53 @@ def get_cell_labels(img):
 
     return labels,cellxy
 
+def get_roi_cell_labels(img, v1_pos, v2_pos, min_roi_radius = 15):
+    '''
+    Labels cells within half edge distance (approx.) to the fiducial vertices tracked for recoil measurement.
+
+    Arg-s:
+        - img : binary image with pixel values in {0,255} (0:background, 255: foreground).
+        - v1_pos: first fiducial vertex position in pixels, numpy array w/ shape (2,) : [x1, y1].
+        - v2_pos: second fiducial vertex position in pixels, numpy array : [x2, y2].
+        - min_roi_radius: minimum half edge distance. If v1-v2 distance is too small min_roi_radius
+                          is used as the "half edge distance".
+    Returns:
+        - roi_labels : cell labels image (N unique labels and background:"0").
+        - roi_cellxy : cell centroids (x,y) with shape (N,2).
+    '''
+    img_shape = img.shape
+
+    # Label cells after trimming edge pixels (edge is set to be background:0)
+    img = trim_bound_pixels(img)
+    Ls, Cpos = get_cell_labels(img) # this might contain too many cells for manual tracking
+
+    # half edge distance (approx): keep labels within this dist. from the fiducials
+    half_dist = round(np.sqrt(((v1_pos - v2_pos)**2).sum())/2)
+    half_dist = max([half_dist,15]) # set minimum roi radius to 15pix
+
+    # fiducial roi bounds: image axes 0->vertical, 1->horizontal
+    # v1 : [ax0min,ax0max,ax1min,ax1max]
+    fid1_bounds = [max([round(v1_pos[1])-half_dist,0]), min([round(v1_pos[1])+half_dist+1,img_shape[0]]),
+                   max([round(v1_pos[0])-half_dist,0]), min([round(v1_pos[0])+half_dist+1,img_shape[1]])]
+    # v2 : [ax0min,ax0max,ax1min,ax1max]
+    fid2_bounds = [max([round(v2_pos[1])-half_dist,0]), min([round(v2_pos[1])+half_dist+1,img_shape[0]]),
+                   max([round(v2_pos[0])-half_dist,0]), min([round(v2_pos[0])+half_dist+1,img_shape[0]])]
+
+    # Select cell labels near two fiducials
+    L_roi = np.unique(Ls[fid1_bounds[0]:fid1_bounds[1],fid1_bounds[2]:fid1_bounds[3]]).tolist()
+    L_roi.extend(np.unique(Ls[fid2_bounds[0]:fid2_bounds[1],fid2_bounds[2]:fid2_bounds[3]]).tolist())
+    L_roi = [l for l in np.unique(L_roi) if l!=0]
+
+    # re-label cells
+    roi_labels = np.zeros_like(Ls)
+    for l_new,l_old in enumerate(L_roi):
+        roi_labels[Ls==l_old] = l_new+1
+
+    # re-index cell positions with new labels
+    roi_cellxy = Cpos[[l-1 for l in L_roi]]
+
+    return roi_labels, roi_cellxy
+
 
 def t_dist(x, y, w=10):
     '''
