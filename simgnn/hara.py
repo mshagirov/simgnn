@@ -315,6 +315,8 @@ def get_node_locations(labels,xbound,ybound):
     Returns:
     - nodeLocs : x,y locations, shape:(#nodes,2).
     - nodenames : node names, a list of tuples. "nodenames" -- each node is named by the tuple of cell labels that share the node.
+
+    See `get_node_locations_bw` for finding nodes in cell boundary images w/o labels.
     '''
     nodelocs = []
     nodenames = []
@@ -325,6 +327,58 @@ def get_node_locations(labels,xbound,ybound):
             nodenames.append(tuple(neighbourLabels[neighbourLabels!=0])) # exclude "0" label
     nodelocs = np.array(nodelocs)
     return nodelocs, nodenames
+
+
+def get_node_locations_bw(img,labels=None):
+    '''
+    Find vertex/node locations (3-cell junctions) in BW mask images. Optionally, if given `labels` return only vertices
+    of labeled cells.
+
+    Arg-s:
+        - img : cell boundaries image with pixel values in {0,255} (0:background, 255: foreground).
+        - labels : (optional) cell labels image. If provided, `get_node_locations_bw` returns only vertex locations
+                   of labeled cells.
+    Returns:
+        - v0_pos_cortd: a list of vertex locations where each element is a nx2 array of pixel locations ([x,y]) for each vertex.
+                        (single vertex can have multiple connected pixel locations).
+        - new_img : if `labels!=None` returns a new cell boundaries image with only labeled cells.
+    '''
+    # 2D XY grid for images
+    Xgrid, Ygrid = np.meshgrid(np.arange(0,img.shape[1]), np.arange(0,img.shape[0]) )
+    # locations of cell boundaries
+    ccj_x, ccj_y = Xgrid[ img != 0].ravel(), Ygrid[ img != 0].ravel()
+
+    if labels is not None:
+        new_img = np.zeros_like(img) # new boundaries image
+
+    # guess vertex locations (3-cell junctions)
+    v0_pos_guess = []
+
+    for xi,yi in zip(ccj_x, ccj_y):
+        if labels is not None:
+            # ignore boundary if cells are not labeled (if labels!=None)
+            if (len([li for li in np.unique(labels[yi-1:yi+2,xi-1:xi+2]) if li!=0])<1):
+                continue
+            new_img[yi,xi] = 255
+
+        if (img[yi-1:yi+2,xi-1:xi+2]/255).sum()<4:
+            # ignore if not 3-cell junction
+            continue
+        v0_pos_guess.append([xi,yi])
+
+    # correct vertex locations by combining joint vertices
+    v0_mask = np.ones((len(v0_pos_guess),),dtype=np.int_)
+    v0_pos_guess = np.array(v0_pos_guess)
+    v0_pos_cortd = []
+    for k,vi_pos in enumerate(v0_pos_guess):
+        if v0_mask[k]<1:
+            continue
+        distance_roi = np.sum((v0_pos_guess - vi_pos)**2,axis=1)<4
+        v0_pos_cortd.append(v0_pos_guess[distance_roi])
+        v0_mask[distance_roi] = 0
+    if (labels is not None):
+        return v0_pos_cortd, new_img
+    return v0_pos_cortd
 
 
 def extract_nodes(imgstack, labelStack):
