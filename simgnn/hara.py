@@ -339,8 +339,8 @@ def get_node_locations_bw(img,labels=None):
         - labels : (optional) cell labels image. If provided, `get_node_locations_bw` returns only vertex locations
                    of labeled cells.
     Returns:
-        - v0_pos_cortd: a list of vertex locations where each element is a nx2 array of pixel locations ([x,y]) for each vertex.
-                        (single vertex can have multiple connected pixel locations).
+        - v_pos: a list of vertex locations (3-cell junctions) where each element is a nx2 array of pixel locations
+                 ([[x,y],...]) for each vertex. Each vertex can have multiple connected pixel locations.
         - new_img : if `labels!=None` returns a new cell boundaries image with only labeled cells.
     '''
     # 2D XY grid for images
@@ -369,16 +369,16 @@ def get_node_locations_bw(img,labels=None):
     # correct vertex locations by combining joint vertices
     v0_mask = np.ones((len(v0_pos_guess),),dtype=np.int_)
     v0_pos_guess = np.array(v0_pos_guess)
-    v0_pos_cortd = []
+    v_pos = []
     for k,vi_pos in enumerate(v0_pos_guess):
         if v0_mask[k]<1:
             continue
         distance_roi = np.sum((v0_pos_guess - vi_pos)**2,axis=1)<4
-        v0_pos_cortd.append(v0_pos_guess[distance_roi])
+        v_pos.append(v0_pos_guess[distance_roi])
         v0_mask[distance_roi] = 0
     if (labels is not None):
-        return v0_pos_cortd, new_img
-    return v0_pos_cortd
+        return v_pos, new_img
+    return v_pos
 
 
 def extract_nodes(imgstack, labelStack):
