@@ -9,7 +9,7 @@ from skimage import measure, morphology
 import matplotlib
 import matplotlib.pyplot as plt
 
-def read_tiff_stack(filepath, trim_bound = True):
+def read_tiff_stack(filepath, trim_bound = True, verbose=False):
     '''
     Import tiff image stack using skimage.io.imread() w/ optional removal of image edges (set to zeroes).
 
@@ -22,7 +22,9 @@ def read_tiff_stack(filepath, trim_bound = True):
     '''
     imgstack = skimage.io.imread(filepath)# [t, Y, X]
     assert len(imgstack.shape)==3 # [t, Y, X]
-    print(f'Image stack shape: {imgstack.shape} -- trim boundaries: {trim_bound}')
+    if verbose:
+        print(f'Image stack shape: {imgstack.shape} -- trim boundaries: {trim_bound}')
+
     if trim_bound:
         imgstack[:,0,:] = 0
         imgstack[:,-1,:]= 0
@@ -30,17 +32,6 @@ def read_tiff_stack(filepath, trim_bound = True):
         imgstack[:,:,-1]= 0
     return imgstack
 
-def trim_bound_pixels(mask_img):
-    '''
-    Sets boundary pixels to zeroes.
-
-    mask_img: binary image, a mask image with intensity values \in {0,255}
-    '''
-    mask_img[:,0]=0
-    mask_img[:,-1]=0
-    mask_img[0,:]=0
-    mask_img[-1,:]=0
-    return mask_img
 
 def rm_small_holes(imgstack, area_threshold=2,connectivity=1):
     '''Remove small holes in image slices/frames w/ `skimage.morphology.remove_small_holes`.'''
@@ -97,55 +88,6 @@ def get_cell_labels(img):
     cellxy = np.array([xy0.centroid[-1::-1] for xy0 in stats])# idx=l-1
 
     return labels,cellxy
-
-def get_roi_cell_labels(img, v1_pos, v2_pos, s=1.0, min_roi_radius = 15):
-    '''
-    Labels cells within a distance `s*l_e` (approx.) to the fiducial vertices tracked for recoil measurement, where
-    `l_e` is a distance between fiducial vertices.
-
-    Arg-s:
-        - img : cell boundaries image with pixel values in {0,255} (0:background, 255: foreground).
-        - v1_pos: first fiducial vertex position in pixels, numpy array w/ shape (2,) : [x1, y1].
-        - v2_pos: second fiducial vertex position in pixels, numpy array : [x2, y2].
-        - s : scaling constant, e.g. s=1 uses full l_e (larger roi near fiducials).
-        - min_roi_radius: minimum half edge distance. If v1-v2 distance is too small min_roi_radius
-                          is used as the "half edge distance".
-    Returns:
-        - roi_labels : cell labels image (N unique labels and background:"0").
-        - roi_cellxy : cell centroids (x,y) with shape (N,2).
-    '''
-    img_shape = img.shape
-
-    # Label cells after trimming edge pixels (edge is set to be background:0)
-    img = trim_bound_pixels(img)
-    Ls, Cpos = get_cell_labels(img) # this might contain too many cells for manual tracking
-
-    # half edge distance (approx): keep labels within this dist. from the fiducials
-    roi_dist = round(s*np.sqrt(((v1_pos - v2_pos)**2).sum()))
-    roi_dist = max([roi_dist,15]) # set minimum roi radius to 15pix
-
-    # fiducial roi bounds: image axes 0->vertical, 1->horizontal
-    # v1 : [ax0min,ax0max,ax1min,ax1max]
-    fid1_bounds = [max([round(v1_pos[1])-roi_dist,0]), min([round(v1_pos[1])+roi_dist+1,img_shape[0]]),
-                   max([round(v1_pos[0])-roi_dist,0]), min([round(v1_pos[0])+roi_dist+1,img_shape[1]])]
-    # v2 : [ax0min,ax0max,ax1min,ax1max]
-    fid2_bounds = [max([round(v2_pos[1])-roi_dist,0]), min([round(v2_pos[1])+roi_dist+1,img_shape[0]]),
-                   max([round(v2_pos[0])-roi_dist,0]), min([round(v2_pos[0])+roi_dist+1,img_shape[0]])]
-
-    # Select cell labels near two fiducials
-    L_roi = np.unique(Ls[fid1_bounds[0]:fid1_bounds[1],fid1_bounds[2]:fid1_bounds[3]]).tolist()
-    L_roi.extend(np.unique(Ls[fid2_bounds[0]:fid2_bounds[1],fid2_bounds[2]:fid2_bounds[3]]).tolist())
-    L_roi = [l for l in np.unique(L_roi) if l!=0]
-
-    # re-label cells
-    roi_labels = np.zeros_like(Ls)
-    for l_new,l_old in enumerate(L_roi):
-        roi_labels[Ls==l_old] = l_new+1
-
-    # re-index cell positions with new labels
-    roi_cellxy = Cpos[[l-1 for l in L_roi]]
-
-    return roi_labels, roi_cellxy
 
 
 def t_dist(x, y, w=10):
@@ -329,58 +271,6 @@ def get_node_locations(labels,xbound,ybound):
     return nodelocs, nodenames
 
 
-def get_node_locations_bw(img,labels=None):
-    '''
-    Find vertex/node locations (3-cell junctions) in BW mask images. Optionally, if given `labels` return only vertices
-    of labeled cells.
-
-    Arg-s:
-        - img : cell boundaries image with pixel values in {0,255} (0:background, 255: foreground).
-        - labels : (optional) cell labels image. If provided, `get_node_locations_bw` returns only vertex locations
-                   of labeled cells.
-    Returns:
-        - v_pos: a list of vertex locations (3-cell junctions) where each element is a nx2 array of pixel locations
-                 ([[x,y],...]) for each vertex. Each vertex can have multiple connected pixel locations.
-        - new_img : if `labels!=None` returns a new cell boundaries image with only labeled cells.
-    '''
-    # 2D XY grid for images
-    Xgrid, Ygrid = np.meshgrid(np.arange(0,img.shape[1]), np.arange(0,img.shape[0]) )
-    # locations of cell boundaries
-    ccj_x, ccj_y = Xgrid[ img != 0].ravel(), Ygrid[ img != 0].ravel()
-
-    if labels is not None:
-        new_img = np.zeros_like(img) # new boundaries image
-
-    # guess vertex locations (3-cell junctions)
-    v0_pos_guess = []
-
-    for xi,yi in zip(ccj_x, ccj_y):
-        if labels is not None:
-            # ignore boundary if cells are not labeled (if labels!=None)
-            if (len([li for li in np.unique(labels[yi-1:yi+2,xi-1:xi+2]) if li!=0])<1):
-                continue
-            new_img[yi,xi] = 255
-
-        if (img[yi-1:yi+2,xi-1:xi+2]/255).sum()<4:
-            # ignore if not 3-cell junction
-            continue
-        v0_pos_guess.append([xi,yi])
-
-    # correct vertex locations by combining joint vertices
-    v0_mask = np.ones((len(v0_pos_guess),),dtype=np.int_)
-    v0_pos_guess = np.array(v0_pos_guess)
-    v_pos = []
-    for k,vi_pos in enumerate(v0_pos_guess):
-        if v0_mask[k]<1:
-            continue
-        distance_roi = np.sum((v0_pos_guess - vi_pos)**2,axis=1)<4
-        v_pos.append(v0_pos_guess[distance_roi])
-        v0_mask[distance_roi] = 0
-    if (labels is not None):
-        return v_pos, new_img
-    return v_pos
-
-
 def extract_nodes(imgstack, labelStack):
     '''
     Extract nodes from labeled cells and BW boundary stacks.
@@ -490,3 +380,226 @@ def extract_graph(imgstack, labelStack):
     ```
     '''
     return node_dict2graph( extract_nodes(imgstack, labelStack))
+
+
+def trim_bound_pixels(mask_img):
+    '''
+    Sets boundary pixels to zeroes.
+
+    mask_img: binary image w/ shape: (H,W), a mask image with intensity values \in {0,255}
+    '''
+    mask_img[:,0]=0
+    mask_img[:,-1]=0
+    mask_img[0,:]=0
+    mask_img[-1,:]=0
+    return mask_img
+
+
+def get_roi_cell_labels(img, v1_pos, v2_pos, s=1.0, min_roi_radius = 15, trim_edges = True):
+    '''
+    Labels cells within `s*l_e` distance (approx.) to the fiducial vertices tracked for recoil measurement, where
+    `l_e` is a distance between fiducial vertices.
+
+    Arg-s:
+        - img : cell boundaries image with pixel values in {0,255} (0:background, 255: foreground).
+        - v1_pos: first fiducial vertex position in pixels, numpy array w/ shape (2,) : [x1, y1].
+        - v2_pos: second fiducial vertex position in pixels, numpy array : [x2, y2].
+        - s : scaling constant, e.g. s=1 uses full l_e (larger roi near fiducials).
+        - min_roi_radius: minimum half edge distance. If v1-v2 distance is too small min_roi_radius
+                          is used as the "half edge distance".
+        - trim_edges: if true image boundary pixels are set to zeroes.
+    Returns:
+        - roi_labels : cell labels image (N unique labels and background:"0").
+        - roi_cellxy : cell centroids (x,y) with shape (N,2).
+    '''
+    img_shape = img.shape
+
+    # Label cells after trimming edge pixels (edge is set to be background:0)
+    if trim_edges:
+        img = trim_bound_pixels(img)
+    Ls, Cpos = get_cell_labels(img) # this might contain too many cells for manual tracking
+
+    # half edge distance (approx): keep labels within this dist. from the fiducials
+    roi_dist = round(s*np.sqrt(((v1_pos - v2_pos)**2).sum()))
+    roi_dist = max([roi_dist,15]) # set minimum roi radius to 15pix
+
+    # fiducial roi bounds: image axes 0->vertical, 1->horizontal
+    # v1 : [ax0min,ax0max,ax1min,ax1max]
+    fid1_bounds = [max([round(v1_pos[1])-roi_dist,0]), min([round(v1_pos[1])+roi_dist+1,img_shape[0]]),
+                   max([round(v1_pos[0])-roi_dist,0]), min([round(v1_pos[0])+roi_dist+1,img_shape[1]])]
+    # v2 : [ax0min,ax0max,ax1min,ax1max]
+    fid2_bounds = [max([round(v2_pos[1])-roi_dist,0]), min([round(v2_pos[1])+roi_dist+1,img_shape[0]]),
+                   max([round(v2_pos[0])-roi_dist,0]), min([round(v2_pos[0])+roi_dist+1,img_shape[0]])]
+
+    # Select cell labels near two fiducials
+    L_roi = np.unique(Ls[fid1_bounds[0]:fid1_bounds[1],fid1_bounds[2]:fid1_bounds[3]]).tolist()
+    L_roi.extend(np.unique(Ls[fid2_bounds[0]:fid2_bounds[1],fid2_bounds[2]:fid2_bounds[3]]).tolist())
+    L_roi = [l for l in np.unique(L_roi) if l!=0]
+
+    # re-label cells
+    roi_labels = np.zeros_like(Ls)
+    for l_new,l_old in enumerate(L_roi):
+        roi_labels[Ls==l_old] = l_new+1
+
+    # re-index cell positions with new labels
+    roi_cellxy = Cpos[[l-1 for l in L_roi]]
+
+    return roi_labels, roi_cellxy
+
+
+def get_node_locations_bw(img, labels=None):
+    '''
+    Find vertex/node locations (3-cell junctions) in BW mask images. Optionally, if given `labels` return only vertices
+    of labeled cells.
+
+    Arg-s:
+        - img : cell boundaries image with pixel values in {0,255} (0:background, 255: foreground).
+        - labels : (optional) cell labels image. If provided, `get_node_locations_bw` returns only vertex locations
+                   of labeled cells.
+    Returns:
+        - v_pos: a list of vertex locations (3-cell junctions) where each element is a nx2 array of pixel locations
+                 ([[x,y],...]) for each vertex. Each vertex can have multiple connected pixel locations.
+        - new_img : if `labels!=None` returns a new cell boundaries image with only labeled cells.
+    '''
+    # 2D XY grid for images
+    Xgrid, Ygrid = np.meshgrid(np.arange(0,img.shape[1]), np.arange(0,img.shape[0]) )
+    # locations of cell boundaries
+    ccj_x, ccj_y = Xgrid[ img != 0].ravel(), Ygrid[ img != 0].ravel()
+
+    if labels is not None:
+        new_img = np.zeros_like(img) # new boundaries image
+
+    # guess vertex locations (3-cell junctions)
+    v0_pos_guess = []
+
+    for xi,yi in zip(ccj_x, ccj_y):
+        if labels is not None:
+            # ignore boundary if cells are not labeled (if labels!=None)
+            if (len([li for li in np.unique(labels[yi-1:yi+2,xi-1:xi+2]) if li!=0])<1):
+                continue
+            new_img[yi,xi] = 255
+
+        if (img[yi-1:yi+2,xi-1:xi+2]/255).sum()<4:
+            # ignore if not 3-cell junction
+            continue
+        v0_pos_guess.append([xi,yi])
+
+    # correct vertex locations by combining joint vertices
+    v0_mask = np.ones((len(v0_pos_guess),),dtype=np.int_)
+    v0_pos_guess = np.array(v0_pos_guess)
+    v_pos = []
+    for k,vi_pos in enumerate(v0_pos_guess):
+        if v0_mask[k]<1:
+            continue
+        distance_roi = np.sum((v0_pos_guess - vi_pos)**2,axis=1)<4
+        v_pos.append(v0_pos_guess[distance_roi])
+        v0_mask[distance_roi] = 0
+    if (labels is not None):
+        return v_pos, new_img
+    return v_pos
+
+
+def mask_to_position_graph(img, v_pos):
+    '''
+    Converts BW cell boundary mask (skeleton) to a graph: {"vertices":pixel positions array, "edges": pairs of indices in positions array}.
+
+    Arg-s:
+        - img : cell boundaries image with pixel values in {0,255} (0:background, 255: foreground).
+        - v_pos : a list of nx2 arrays --vertex locations (3-cell junctions). E.g. output from `get_node_locations_bw`.
+    Returns:
+        - pix_pos : pixel positions in `img` w/ shape (N,2).
+        - pix_edge_index : edge indices of `pix_pos` along axis=0 w/ shape (2,M), where M:#edges.
+        - pix_labels : dict of labels of pixel positions, e.g. `pix_labels[tuple(pix_pos[k])]` is a label of kth pixel.
+                       Labels for 3-cell junction vertex locations are intigers [0,1,...], and for non 3-cell junction
+                       pixels labels are `None`.
+    '''
+    # Cell boundary pos: [[xi,yi],...]
+    pix_pos = np.stack( [a[img!=0].ravel() for a in np.meshgrid(np.arange(0,img.shape[1]), np.arange(0,img.shape[0]) )], axis=1)
+
+    # Label of the position as a vertex index in "v0_pos_cortd"
+    pix_labels={tuple(vi_pos.tolist()):l for l, vi in enumerate(v_pos) for vi_pos in vi}
+    # Edges btwn  cell boundary pos: indices in "ccj_pos"
+    pix_edge_index=[]
+    for k in range(0,pix_pos.shape[0]):
+        if tuple(pix_pos[k]) not in pix_labels:
+            # not 3-cell junction
+            pix_labels[tuple(pix_pos[k])]=None
+        for l in range(k+1,pix_pos.shape[0]):
+            if np.sum((pix_pos[l]-pix_pos[k])**2)<2.01:
+                # edge_index[i]: [src_pos_id,tgt_pos_id]
+                pix_edge_index.append([k,l])
+    # convert to 2xN array (N edges)
+    pix_edge_index = np.array(pix_edge_index).T
+    return pix_pos, pix_edge_index, pix_labels
+
+
+def prune_position_graph(pix_pos, pix_edge_index, pix_labels):
+    '''
+    Prune non-3-cell junction pixel indices from `pix_edge_index`.
+
+    Arg-s:
+        - pix_pos : pixel positions of cell boundaries w/ shape (N,2).
+        - pix_edge_index : edge indices of `pix_pos` along axis=0 w/ shape (2,M), where M is #edges.
+        - pix_labels : dict of labels of pixel positions.
+    Return:
+        - pix_edge_index : a pruned `pix_edge_index`.
+    '''
+    for pos_i in range(pix_pos.shape[0]):
+        vi_pos = tuple(pix_pos[pos_i])
+        if pix_labels[vi_pos] is not None:
+            # 3-cell junction
+            continue
+        to_vi   = pix_edge_index[0, pix_edge_index[1]==pos_i]
+        from_vi = pix_edge_index[1, pix_edge_index[0]==pos_i]
+        new_edges = np.concatenate([
+            np.array([[to_vi[k],to_vi[l]] for k in range(len(to_vi)) for l in range(k+1,len(to_vi))] ).T.reshape(2,-1),
+            np.array([[from_vi[k],from_vi[l]] for k in range(len(from_vi)) for l in range(k+1,len(from_vi))] ).T.reshape(2,-1),
+            np.array([[k,l] for k in to_vi for l in from_vi ]).T.reshape(2,-1)], axis=1).astype(np.int_)
+        # prune edges
+        if new_edges.size<1:
+            continue
+        pix_edge_index = np.concatenate([np.delete(pix_edge_index, np.logical_or(pix_edge_index[1]==pos_i, pix_edge_index[0]==pos_i), axis=1),
+                                         new_edges],axis=1)
+
+    return pix_edge_index
+
+
+def mask_to_graph(img, v1_pos, v2_pos, s=1.5, min_roi = 15, trim_edges = True ):
+    '''
+    Labels cells within `s*l_e` distance (approx.) to the fiducial vertices tracked for recoil measurement,
+    where `l_e` is a distance between fiducial vertices, and extracts 3-cell junctions graph.
+
+    Arg-s:
+        - img : cell boundaries image with pixel values in {0,255} (0:background, 255: foreground).
+        - v1_pos: first fiducial vertex position in pixels, numpy array w/ shape (2,) : [x1, y1].
+        - v2_pos: second fiducial vertex position in pixels, numpy array : [x2, y2].
+        - s : scaling constant, e.g. s=1 uses full l_e (larger roi near fiducials).
+        - min_roi: minimum radius. If half "v1-v2" distance is too small `min_roi` is used as the "half edge distance".
+        - trim_edges : if true image boundary pixels are set to zeroes.
+    Returns:
+        - vtx_pos : vertex positions (3-cell junctions).
+        - edge_index : edge indices in `vtx_pos`
+        - labels_tuple : tuple (roi_labels, roi_cellxy), cell labels and cell centroids.
+    '''
+    # Label cells near the fiducials and keep only labeled cell boundaries
+    roi_labels, roi_cellxy = get_roi_cell_labels(img, v1_pos, v2_pos,s=s, min_roi_radius = min_roi, trim_edges = trim_edges)
+    v_pos, new_img = get_node_locations_bw(img, labels=roi_labels)
+
+    #  Extract pixel graph and prune redundant vertices (non 3-cell junction)
+    pix_pos, pix_edge_index, pix_labels = mask_to_position_graph(new_img, v_pos)
+    pix_edge_index = prune_position_graph(pix_pos, pix_edge_index, pix_labels)
+
+    # convert pixel position graph to "vertex label" graph
+    edge_index = np.array([[pix_labels[tuple(e_pix[0])], pix_labels[tuple(e_pix[1])]]
+                           for e_pix in zip(pix_pos[pix_edge_index[0]], pix_pos[pix_edge_index[1]])]).T
+    # remove self edges
+    edge_index = edge_index[:,edge_index[0]!=edge_index[1]]
+
+    # remove unlabeled cell vertices
+    edge_index = edge_index[:,np.logical_or(edge_index[0]!=None,edge_index[1]!=None)]
+    for k, e in enumerate(edge_index.T):
+        if edge_index[:,np.logical_and(edge_index[0]==e[1], edge_index[1]==e[0])].size>0:
+            edge_index = np.delete(edge_index,np.logical_and(edge_index[0]==e[1], edge_index[1]==e[0]),axis=1)
+    # convert vertex positions to an array
+    vtx_pos = np.array([vi_pos.mean(axis=0) for vi_pos in v_pos])
+    return vtx_pos, edge_index, (roi_labels, roi_cellxy)
