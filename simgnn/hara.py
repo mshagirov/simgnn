@@ -460,6 +460,7 @@ def get_node_locations_bw(img, labels=None):
         - v_pos: a list of vertex locations (3-cell junctions) where each element is a nx2 array of pixel locations
                  ([[x,y],...]) for each vertex. Each vertex can have multiple connected pixel locations.
         - new_img : if `labels!=None` returns a new cell boundaries image with only labeled cells.
+        - node2cell_index : node-to-cell edge indices, row=0:vertex indices, row=1: cell indices (labels).
     '''
     # 2D XY grid for images
     Xgrid, Ygrid = np.meshgrid(np.arange(0,img.shape[1]), np.arange(0,img.shape[0]) )
@@ -468,6 +469,7 @@ def get_node_locations_bw(img, labels=None):
 
     if labels is not None:
         new_img = np.zeros_like(img) # new boundaries image
+        v0_cells = [] # initial guess
 
     # guess vertex locations (3-cell junctions)
     v0_pos_guess = []
@@ -475,27 +477,53 @@ def get_node_locations_bw(img, labels=None):
     for xi,yi in zip(ccj_x, ccj_y):
         if labels is not None:
             # ignore boundary if cells are not labeled (if labels!=None)
-            if (len([li for li in np.unique(labels[yi-1:yi+2,xi-1:xi+2]) if li!=0])<1):
+            cell_ids = [li for li in np.unique(labels[yi-1:yi+2,xi-1:xi+2]) if li!=0]
+            if (len(cell_ids)<1):
                 continue
             new_img[yi,xi] = 255
 
         if (img[yi-1:yi+2,xi-1:xi+2]/255).sum()<4:
             # ignore if not 3-cell junction
             continue
+        # 3-cell junction position in skeleton image
         v0_pos_guess.append([xi,yi])
+        if labels is not None:
+            v0_cells.append(cell_ids)
 
     # correct vertex locations by combining joint vertices
-    v0_mask = np.ones((len(v0_pos_guess),),dtype=np.int_)
+    n_verts = len(v0_pos_guess)
+    v0_mask = np.ones((n_verts,),dtype=np.int_)
     v0_pos_guess = np.array(v0_pos_guess)
     v_pos = []
+    vi_count = 0
+
+    if labels is not None:
+        node2cell_index = []
+
+    # combine joint vertices
     for k,vi_pos in enumerate(v0_pos_guess):
         if v0_mask[k]<1:
             continue
         distance_roi = np.sum((v0_pos_guess - vi_pos)**2,axis=1)<4
         v_pos.append(v0_pos_guess[distance_roi])
-        v0_mask[distance_roi] = 0
+
+        if labels is not None:
+            for vi_is_same, vi_cells in zip(distance_roi,v0_cells):
+                if vi_is_same:
+                    node2cell_index.extend([[vi_count, c_id] for c_id in vi_cells])
+
+        v0_mask[distance_roi] = 0  # mark as processed
+        vi_count+=1
+
     if (labels is not None):
-        return v_pos, new_img
+        # remove duplicates
+        new_n2c = []
+        for n2c_e in node2cell_index:
+            if n2c_e in new_n2c:
+                continue
+            new_n2c.append(n2c_e)
+        node2cell_index = np.array(new_n2c, dtype=np.int64).T
+        return v_pos, new_img, node2cell_index
     return v_pos
 
 
@@ -579,11 +607,12 @@ def mask_to_graph(img, v1_pos, v2_pos, s=1.5, min_roi = 15, trim_edges = True ):
     Returns:
         - vtx_pos : vertex positions (3-cell junctions).
         - edge_index : edge indices in `vtx_pos`
+        - v_cells : list of lists, cell labels associated w/ each vertex.
         - labels_tuple : tuple (roi_labels, roi_cellxy), cell labels and cell centroids.
     '''
     # Label cells near the fiducials and keep only labeled cell boundaries
     roi_labels, roi_cellxy = get_roi_cell_labels(img, v1_pos, v2_pos,s=s, min_roi_radius = min_roi, trim_edges = trim_edges)
-    v_pos, new_img = get_node_locations_bw(img, labels=roi_labels)
+    v_pos, new_img, v_cells = get_node_locations_bw(img, labels=roi_labels)
 
     #  Extract pixel graph and prune redundant vertices (non 3-cell junction)
     pix_pos, pix_edge_index, pix_labels = mask_to_position_graph(new_img, v_pos)
@@ -602,4 +631,4 @@ def mask_to_graph(img, v1_pos, v2_pos, s=1.5, min_roi = 15, trim_edges = True ):
             edge_index = np.delete(edge_index,np.logical_and(edge_index[0]==e[1], edge_index[1]==e[0]),axis=1)
     # convert vertex positions to an array
     vtx_pos = np.array([vi_pos.mean(axis=0) for vi_pos in v_pos])
-    return vtx_pos, edge_index, (roi_labels, roi_cellxy)
+    return vtx_pos, edge_index, v_cells, (roi_labels, roi_cellxy)
