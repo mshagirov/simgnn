@@ -625,10 +625,10 @@ def mask_to_graph(img, v1_pos, v2_pos, s=1.5, min_roi = 15, trim_edges = True ):
     edge_index = edge_index[:,edge_index[0]!=edge_index[1]]
 
     # remove unlabeled cell vertices
-    edge_index = edge_index[:,np.logical_or(edge_index[0]!=None,edge_index[1]!=None)]
+    edge_index = edge_index[:,np.logical_and(edge_index[0]!=None,edge_index[1]!=None)]
     for k, e in enumerate(edge_index.T):
         if edge_index[:,np.logical_and(edge_index[0]==e[1], edge_index[1]==e[0])].size>0:
             edge_index = np.delete(edge_index,np.logical_and(edge_index[0]==e[1], edge_index[1]==e[0]),axis=1)
     # convert vertex positions to an array
     vtx_pos = np.array([vi_pos.mean(axis=0) for vi_pos in v_pos])
-    return vtx_pos, edge_index, v_cells, (roi_labels, roi_cellxy)
+    return vtx_pos, edge_index.astype(np.int64), v_cells, (roi_labels, roi_cellxy)
