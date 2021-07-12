@@ -606,7 +606,7 @@ def mask_to_graph(img, v1_pos, v2_pos, s=1.5, min_roi = 15, trim_edges = True ):
         - trim_edges : if true image boundary pixels are set to zeroes.
     Returns:
         - vtx_pos : vertex positions (3-cell junctions).
-        - edge_index : edge indices in `vtx_pos`
+        - edges_index : edge indices in `vtx_pos`
         - v_cells : list of lists, cell labels associated w/ each vertex.
         - labels_tuple : tuple (roi_labels, roi_cellxy), cell labels and cell centroids.
     '''
@@ -619,16 +619,25 @@ def mask_to_graph(img, v1_pos, v2_pos, s=1.5, min_roi = 15, trim_edges = True ):
     pix_edge_index = prune_position_graph(pix_pos, pix_edge_index, pix_labels)
 
     # convert pixel position graph to "vertex label" graph
-    edge_index = np.array([[pix_labels[tuple(e_pix[0])], pix_labels[tuple(e_pix[1])]]
+    edges_index = np.array([[pix_labels[tuple(e_pix[0])], pix_labels[tuple(e_pix[1])]]
                            for e_pix in zip(pix_pos[pix_edge_index[0]], pix_pos[pix_edge_index[1]])]).T
     # remove self edges
-    edge_index = edge_index[:,edge_index[0]!=edge_index[1]]
+    edges_index = edges_index[:,edges_index[0]!=edges_index[1]]
 
     # remove unlabeled cell vertices
-    edge_index = edge_index[:,np.logical_and(edge_index[0]!=None,edge_index[1]!=None)]
-    for k, e in enumerate(edge_index.T):
-        if edge_index[:,np.logical_and(edge_index[0]==e[1], edge_index[1]==e[0])].size>0:
-            edge_index = np.delete(edge_index,np.logical_and(edge_index[0]==e[1], edge_index[1]==e[0]),axis=1)
+    edges_index = edges_index[:,np.logical_and(edges_index[0]!=None,edges_index[1]!=None)]
+
+    # remove duplicates (label them as None vertices)
+    to_remove = np.zeros(edges_index[0].shape,dtype=bool)
+    for k, e in enumerate(edges_index.T):
+        if to_remove[k]:
+            continue
+        edges_mask = np.logical_or(np.logical_and(edges_index[0]==e[0], edges_index[1]==e[1]),
+                                   np.logical_and(edges_index[0]==e[1], edges_index[1]==e[0]))
+        edges_mask[k] = False
+        if np.any(edges_mask):
+            to_remove = np.logical_or(to_remove, edges_mask)
+    edges_index = edges_index[:,np.logical_not(to_remove)]
     # convert vertex positions to an array
     vtx_pos = np.array([vi_pos.mean(axis=0) for vi_pos in v_pos])
-    return vtx_pos, edge_index.astype(np.int64), v_cells, (roi_labels, roi_cellxy)
+    return vtx_pos, edges_index.astype(np.int64), v_cells, (roi_labels, roi_cellxy)
