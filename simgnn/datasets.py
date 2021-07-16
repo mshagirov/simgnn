@@ -92,7 +92,7 @@ class VertexDynamics(Dataset):
         - smoothing: If `True`, apply simple moving average on vertex positions. Computes `mean(x[T-sma_lag_time:T+1])`
                      along time dimension (must be axis=0 in vertex positions array).
         - sma_lag_time: a smoothing parameter, number of *past* vertex positions to use together with a current one in computing a current
-                        average position (expected vertex position). Use this to denoise the vertex trajectories. The current expected 
+                        average position (expected vertex position). Use this to denoise the vertex trajectories. The current expected
                         vertex position is approximated as `mean({x[T-sma_lag_time], ..., x[T-1], x[T]})` (with available values).
         '''
         self.raw_dir_path = path.join(root,'raw')
@@ -358,10 +358,6 @@ class HaraMovies(VertexDynamics):
         - cell graph topology and number of nodes is constant w.r.t. to frames.
         '''
         for raw_path in self.raw_paths:
-            # a movie in "raw_path"
-            # monolayer graph (topology)
-            # mg_dict = load_graph(path.join(raw_path,'graph_dict.pkl'))
-
             # Load node positions from raw_path and convert to (windowed) node attrib-s and targets.
             node_pos, X_node, Y_node = self.pos2nodeXY(pos_path = path.join(raw_path,'vtx_pos.npy') )
 
