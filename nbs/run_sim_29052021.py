@@ -1,3 +1,24 @@
+"""
+Name: unimodal_wbasetens_sims
+
+Simulation param-s (random):
+    Ka_cells ~ Normal(mean=1.0,std=0.1)     [clamped (0.75,1.25)]
+    A0_cells ~ Normal(mean=2.3,std=0.25)    [clamped(1.6,3)]
+    P0_cells ~ Normal(mean=0,std=0.15)      [clamped (0,)]
+    Kp_cells ~ Normal(mean=0.003,std=0.001) [clamped (0.0001,)]
+
+    (unit_of_time = 1 min = 1/Dt : Dt:simulation time step size):
+    Amplitudes:
+        lmd_ij_ON ~ Normal(mu=1, s.d.=1) [clamped (0,6)]
+    Frequencies:
+        omega_ij ~ Uniform(0, N_peaks_max*pi)
+    Phases : 
+        phase_ij ~ Uniform(0, 0.5*pi)
+    Base/Minimum contractility:
+        base_lmd_ij ~ Uniform(0.4, 1.6)
+    
+    Lambda_ij(t) ~ base_lmd_ij + lmd_ij*torch.cos(omega_ij*t+phase_ij)**2
+"""
 import numpy as np
 import torch
 from os import path
