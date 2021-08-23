@@ -1,7 +1,7 @@
 import time
 import copy
 import torch
-import pickle
+import pickle, matplotlib.pyplot as plt, numpy as np
 
 # Default loss functions
 mse_loss = torch.nn.MSELoss(reduction='mean')
