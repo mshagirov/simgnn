@@ -161,11 +161,23 @@ def write_log(fpath, train_log):
     with open(fpath, 'wb') as f:
         pickle.dump(train_log, f)
 
+
 def load_log(fpath):
     '''Load training log dict from a pickle file ('*.pkl').'''
     with open(fpath, 'rb') as f:
         train_log = pickle.load(f)
     return train_log
+
+
+def plot_losses(train_log, loaders, dataset_legend,figsize=[15,8]):
+    '''Plot training losses for the logged datasets in `train_log`'''
+    if figsize is not None:
+        plt.figure(figsize=figsize)
+    training_epochs = np.arange(train_log['total_epochs'])
+    for data_name in loaders:
+        # plot losses for each dataset
+        plt.plot(training_epochs, train_log[f'{data_name}_loss_tot'],lw=3,label=f'{dataset_legend[data_name]}')
+    plt.legend();
 
 
 def predict(model, input_data, loss_func=l1_loss,
@@ -268,3 +280,40 @@ def predict_batch(model, data_loaders,
         return (X_vel_datasets, E_tens_datasets, C_pres_datasets), (X_vel_targets, E_tens_targets, C_pres_targets), running_losses
     
     return (X_vel_datasets, E_tens_datasets, C_pres_datasets), (X_vel_targets, E_tens_targets, C_pres_targets)
+
+
+def plot_velocity_predictions(vel_pred, vel_tgt, dataset_legend,
+                              figsize=[15,7]):
+    '''Concatenate all batches and plot scatter plot target vs predicted velocity values'''
+    var_name = '$\Delta{}x$'
+    
+    for data_name in vel_pred:
+        minY, maxY  = torch.cat(vel_tgt[data_name],dim=0).min(), torch.cat(vel_tgt[data_name],dim=0).max()
+        fig,axs = plt.subplots(nrows=1,ncols=2,sharex=True,sharey=True,figsize=figsize)    
+        for k,ax in enumerate(axs):
+            ax.plot([minY,maxY], [minY,maxY],'--',color='b',lw=3,alpha=.5)
+            ax.plot(torch.cat(vel_tgt[data_name], dim=0)[:,k],
+                    torch.cat(vel_pred[data_name], dim=0)[:,k], 'o',ms=10,mfc='tomato',alpha=.25)
+            ax.set_xlabel('True');
+            ax.set_ylabel('Predicted')
+            ax.set_title(f'{var_name}$_{k}$');
+        plt.suptitle(f'{dataset_legend[data_name]}')
+        plt.show()
+
+
+def plot_tension_prediction(t_pred, t_tgt, dataset_legend, 
+                            nrows=1, ncols=3, figsize=[23,7]):
+    '''Concatenate all batches and plot scatter plot target vs predicted tension values'''
+    data_names = [e for e in t_pred if len(t_pred[e])>1]
+    fig,axs = plt.subplots(nrows=nrows,ncols=ncols,figsize=figsize)
+    axs=axs.ravel()
+    for data_name,ax in zip(data_names,axs):
+        minY, maxY  = torch.cat(t_tgt[data_name],dim=0).min(), torch.cat(t_tgt[data_name],dim=0).max()
+        ax.plot([minY,maxY], [minY,maxY],'--',color='orange',lw=3,alpha=.8)
+        ax.plot(torch.cat(t_tgt[data_name], dim=0),
+                torch.cat(t_pred[data_name], dim=0), 'o',ms=10,c='c',mfc='teal',alpha=.2)
+        ax.set_xlabel('True');
+        ax.set_ylabel('Predicted')
+        ax.set_title(f'{dataset_legend[data_name]}');
+    plt.suptitle('Tension')
+    plt.show()
