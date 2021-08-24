@@ -86,10 +86,12 @@ def train_model(model,
 
                 with torch.set_grad_enabled(state=='train'):
                     X_vel, E_tens, C_pres = model(data) # outputs:(#nodes/#edges/#cells, #dims)
+                    
                     vel_loss    = loss_func(X_vel, data.y) if data.y is not None else 0.0
-
-                    tens_loss   = loss_func(E_tens, data.edge_tensions) if use_force_loss[state][0] else 0.0
-
+                    
+                    tens_mask = torch.logical_not(data.edge_tensions.isnan()) if use_force_loss[state][0] else None # ignore NaN targets
+                    tens_loss = loss_func(E_tens[tens_mask], data.edge_tensions[tens_mask]) if use_force_loss[state][0] else 0.0
+                    
                     pres_loss   = loss_func(C_pres, data.cell_pressures) if use_force_loss[state][1] else 0.0
 
                     loss = vel_loss + tens_loss + pres_loss # total loss
@@ -200,7 +202,10 @@ def predict(model, input_data, loss_func=l1_loss,
             return (X_vel, E_tens, C_pres), None
         
         vel_loss    = loss_func(X_vel, input_data.y) if input_data.y is not None else 0.0
-        tens_loss   = loss_func(E_tens, input_data.edge_tensions) if use_force_loss[0] else 0.0
+        
+        tens_mask = torch.logical_not(input_data.edge_tensions.isnan()) if use_force_loss[0] else None
+        tens_loss   = loss_func(E_tens[tens_mask], input_data.edge_tensions[tens_mask]) if use_force_loss[0] else 0.0
+        
         pres_loss   = loss_func(C_pres, input_data.cell_pressures) if use_force_loss[1] else 0.0
         loss = vel_loss + tens_loss + pres_loss # total loss
     
@@ -255,7 +260,7 @@ def predict_batch(model, data_loaders,
             if return_losses:
                 (vel_loss, tens_loss, pres_loss, tot_loss) = losses
                 # accumulate losses
-                running_losses[f'{name}_loss_y'] += vel_loss.item()*data.x.size(0)
+                running_losses[f'{name}_loss_y'] += vel_loss.item()*data.x.size(0) if data.y is not None else 0.0
                 n_samples[f'{name}_loss_y'] += data.x.size(0)
 
                 # total loss values weighted by #nodes in each graph batch
@@ -287,8 +292,8 @@ def plot_velocity_predictions(vel_pred, vel_tgt, dataset_legend,
                               figsize=[15,7]):
     '''Concatenate all batches and plot scatter plot target vs predicted velocity values'''
     var_name = '$\Delta{}x$'
-    
-    for data_name in vel_pred:
+    data_names = [e for e in vel_tgt if len(vel_tgt[e])>1]
+    for data_name in data_names:
         minY, maxY  = torch.cat(vel_tgt[data_name],dim=0).min(), torch.cat(vel_tgt[data_name],dim=0).max()
         fig,axs = plt.subplots(nrows=1,ncols=2,sharex=True,sharey=True,figsize=figsize)    
         for k,ax in enumerate(axs):
@@ -305,14 +310,19 @@ def plot_velocity_predictions(vel_pred, vel_tgt, dataset_legend,
 def plot_tension_prediction(t_pred, t_tgt, dataset_legend, 
                             nrows=1, ncols=3, figsize=[23,7]):
     '''Concatenate all batches and plot scatter plot target vs predicted tension values'''
-    data_names = [e for e in t_pred if len(t_pred[e])>1]
+    data_names = [e for e in t_tgt if len(t_tgt[e])>1]
     fig,axs = plt.subplots(nrows=nrows,ncols=ncols,figsize=figsize)
     axs=axs.ravel()
     for data_name,ax in zip(data_names,axs):
-        minY, maxY  = torch.cat(t_tgt[data_name],dim=0).min(), torch.cat(t_tgt[data_name],dim=0).max()
+        t_tgt_i = torch.cat(t_tgt[data_name],dim=0)
+        t_mask = torch.logical_not(t_tgt_i.isnan())
+        
+        minY, maxY  = t_tgt_i[t_mask].min(), t_tgt_i[t_mask].max()
+        
         ax.plot([minY,maxY], [minY,maxY],'--',color='orange',lw=3,alpha=.8)
-        ax.plot(torch.cat(t_tgt[data_name], dim=0),
-                torch.cat(t_pred[data_name], dim=0), 'o',ms=10,c='c',mfc='teal',alpha=.2)
+        ax.plot(t_tgt_i[t_mask],
+                torch.cat(t_pred[data_name], dim=0)[t_mask], 'o',ms=10,c='c',mfc='teal',alpha=.2)
+        
         ax.set_xlabel('True');
         ax.set_ylabel('Predicted')
         ax.set_title(f'{dataset_legend[data_name]}');
