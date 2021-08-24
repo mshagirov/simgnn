@@ -86,7 +86,7 @@ def train_model(model,
 
                 with torch.set_grad_enabled(state=='train'):
                     X_vel, E_tens, C_pres = model(data) # outputs:(#nodes/#edges/#cells, #dims)
-                    vel_loss    = loss_func(X_vel, data.y)
+                    vel_loss    = loss_func(X_vel, data.y) if data.y is not None else 0.0
 
                     tens_loss   = loss_func(E_tens, data.edge_tensions) if use_force_loss[state][0] else 0.0
 
@@ -98,7 +98,7 @@ def train_model(model,
                         loss.backward()
                         optimizer.step()
                 # accumulate losses
-                running_losses[f'{state}_loss_y'] += vel_loss.item()*data.x.size(0)
+                running_losses[f'{state}_loss_y'] += vel_loss.item()*data.x.size(0) if data.y is not None else 0.0
                 n_samples[f'{state}_loss_y'] += data.x.size(0)
 
                 # total loss values are valid only for datasets w/ all variable
@@ -199,7 +199,7 @@ def predict(model, input_data, loss_func=l1_loss,
         if not return_losses:
             return (X_vel, E_tens, C_pres), None
         
-        vel_loss    = loss_func(X_vel, input_data.y)
+        vel_loss    = loss_func(X_vel, input_data.y) if input_data.y is not None else 0.0
         tens_loss   = loss_func(E_tens, input_data.edge_tensions) if use_force_loss[0] else 0.0
         pres_loss   = loss_func(C_pres, input_data.cell_pressures) if use_force_loss[1] else 0.0
         loss = vel_loss + tens_loss + pres_loss # total loss
@@ -240,7 +240,8 @@ def predict_batch(model, data_loaders,
                                       use_force_loss = use_force_loss[name],
                                       return_losses = return_losses, device=device)
             X_vel_datasets[name].append(outputs[0].cpu())
-            X_vel_targets[name].append(data.y.cpu())
+            if data.y is not None:
+                X_vel_targets[name].append(data.y.cpu())
             
             if (outputs[1] is not None) and (data.edge_tensions is not None):
                 E_tens_datasets[name].append(outputs[1].cpu())
