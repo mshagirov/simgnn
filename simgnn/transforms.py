@@ -58,6 +58,27 @@ class ScaleVar(object):
         return '{}(scale={})'.format(self.__class__.__name__, self.scale)
 
 
+class TransformVar(object):
+    '''
+    Abstract class for applying non-linear transformations on variables `data.var` w/ a given transformation T
+    s.t. `data.var = self.T(data.var)`. After inheriring `TransformVar` you will need to write the `__call__`, 
+    and optionally the `__repr__` methods.
+    '''
+    def __init__(self, T):
+        '''
+        Arg-s:
+        - t_func : a torch function that can accept `data.var`--a torch tensor as an input, e.g. `torch.log`.
+        '''
+        self.T = T
+    def __call__(self, data):
+        '''
+        - data : an input graph.
+        '''
+        pass
+    def __repr__(self):
+        return '{}(T={}())'.format(self.__class__.__name__, self.T.__name__)
+
+
 class ScaleVelocity(ScaleVar):
     '''Scales velocities (`data.x` and `data.y`) by a given amount : e.g. `data.x = data.x/scale`.'''
     def __init__(self, scale):
@@ -127,6 +148,27 @@ class ScalePressure(ScaleTension):
         return data
 
 
+class TransformTension(TransformVar):
+    '''
+    Applies a transformation T on tension in `data.edge_tensions`:
+    `data.edge_tensions = ( data.edge_tensions )`.
+    '''
+    def __init__(self, T):
+        '''
+        Arg-s:
+        - T : a valid transformation function.
+        '''
+        super(TransformTension, self).__init__(T)
+
+    def __call__(self, data):
+        '''
+        - data : an input graph.
+        '''
+        if data.edge_tensions is not None:
+            data.edge_tensions = self.T(data.edge_tensions)
+        return data
+
+    
 class Reshape_x(object):
     '''
     Reshapes attribute `x` (e.g. data.x) using a given shape.
@@ -145,3 +187,18 @@ class Reshape_x(object):
         return data
     def __repr__(self):
         return '{}({})'.format(self.__class__.__name__, self.shape)
+
+
+class RecoilAsTension(object):
+    '''
+    If present, copies edge recoil values in `data.edge_recoils` to `data.edge_tensions` variable.
+    '''
+    def __call__(self, data):
+        '''
+        - data : an input graph.
+        '''
+        if data.edge_recoils is not None:
+            data.edge_tensions = data.edge_recoils.detach().clone()
+        return data
+    def __repr__(self):
+        return '{}()'.format(self.__class__.__name__)
