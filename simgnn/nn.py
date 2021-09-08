@@ -5,6 +5,8 @@ from torch_scatter import scatter
 class mlp(torch.nn.Module):
     '''
     MLP consisting of multiple linear layers w/ activation func-s (`Fn`). Last layer is always linear layer w/o activation.
+    
+    The last layer is a linear layer, i.e. it has no dropout/activation.
     '''
 
     def __init__(self, in_features, out_features, hidden_dims=[], dropout_p=0, Fn=ReLU, Fn_kwargs={}):
@@ -15,8 +17,6 @@ class mlp(torch.nn.Module):
         - dropout_p   : dropout prob-y for hidden layer(s) {default :  0}.
         - Fn : activation function for hidden layers { default: ReLU }
         - Fn_kwargs : keyword arg-s for `Fn` {default : an empty dict.}
-
-        NOTE: The last layer is always linear, i.e. it has no dropout and activation.
         '''
         super(mlp, self).__init__()
 
