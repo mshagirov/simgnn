@@ -2,10 +2,11 @@ import torch
 from torch.nn import Sequential, Linear, ReLU, Dropout
 from torch_scatter import scatter
 
+
 class mlp(torch.nn.Module):
     '''
     MLP consisting of multiple linear layers w/ activation func-s (`Fn`). Last layer is always linear layer w/o activation.
-    
+
     The last layer is a linear layer, i.e. it has no dropout/activation.
     '''
 
@@ -34,6 +35,53 @@ class mlp(torch.nn.Module):
 
     def forward(self, x):
         return self.layers(x)
+
+
+class IndependentBlock(torch.nn.Module):
+    '''
+    Layer w/ two independent node and edge MLPs that use the same `mlp_kwargs` for both MLPs.
+    The last layers are always plain linear layers, i.e. they have no dropout/activations.
+
+    x_enc, e_enc = IndependentBlock(x, e);
+    '''
+    def __init__(self, in_dims, out_dims, hidden_dims=[],**mlp_kwargs):
+        '''
+        Arg-s:
+            - in_dims : number of input dimensions. Either an int or a dict of integers w/ keys "node" and "edge".
+            - out_dims : number of output dimensions for encoder MLPs. Either an int or a dict of integers.
+            - hidden_dims : a list of hidden dimensions {default : [] no hidden layers}, or a dict of lists.
+            - mlp_kwargs : kwarg-s for MLPs.
+
+        For `in_dims`, `out_dims` use integers, and for `hidden_dims` use a list in order to have same
+        input/output/hidden dimensions for both node and edge MLPs.
+        '''
+        super(IndependentBlock, self).__init__()
+        if type(in_dims)==dict:
+            node_in = in_dims['node']
+            edge_in = in_dims['edge']
+        else:
+            node_in = in_dims
+            edge_in = in_dims
+
+        if type(out_dims)==dict:
+            node_out = out_dims['node']
+            edge_out = out_dims['edge']
+        else:
+            node_out = out_dims
+            edge_out = out_dims
+
+        if type(hidden_dims)==dict:
+            node_hidden_dims = hidden_dims['node']
+            edge_hidden_dims = hidden_dims['edge']
+        else:
+            node_hidden_dims = hidden_dims
+            edge_hidden_dims = hidden_dims
+
+        self.node_mlp = mlp(node_in, node_out, hidden_dims=node_hidden_dims,**mlp_kwargs)
+        self.edge_mlp = mlp(edge_in, edge_out, hidden_dims=edge_hidden_dims,**mlp_kwargs)
+
+    def forward(self, x, edge_attr):
+        return self.node_mlp(x), self.edge_mlp(edge_attr)
 
 
 class Message(torch.nn.Module):
@@ -158,7 +206,7 @@ class Plain_MLP(torch.nn.Module):
 
 class PlainSquaredMLP(torch.nn.Module):
     '''Simple MLP for processing pt-geometric graph vertex features `data.x`.
-    
+
     Returns tuple (y_pred, None, None):
     - y_pred: is an output of `y_pred = PlainSquaredMLP(data.x)`. PlainSquaredMLP(x)=MLP([x,x^2])
     - The two nones are just place holders to make MLP compatible with training function in `train.py`.
@@ -175,7 +223,7 @@ class PlainSquaredMLP(torch.nn.Module):
     def forward(self, data):
         return self.mlp( torch.cat([data.x,data.x**2],dim=1)), None, None
 
-                    
+
 class Single_MP_step(torch.nn.Module):
     '''
     Returns tuple (y_pred, None, None):
@@ -237,7 +285,7 @@ class DiffMessageSquared(torch.nn.Module):
         - edge_attr : edge features w/ shape (#edges, #edge_features)
         '''
         return self.mlp( torch.cat( [tgt - src,(tgt - src)**2, edge_attr], dim=1) )
-    
+
 
 class SingleMPStepSquared(torch.nn.Module):
     def __init__(self, node_in_features=10, node_out_features=2, edge_in_features=2,
@@ -305,7 +353,7 @@ class SingleMP_Tension(torch.nn.Module):
         self.relu = torch.nn.ReLU()
         self.aggr_update = AggregateUpdate(node_in_features+message_out_features,
                                            node_out_features, hidden_dims=update_hidden_dims, aggr=aggr, **mlp_kwargs)
-        self.tension_mlp = mlp(message_out_features, tension_out_features, 
+        self.tension_mlp = mlp(message_out_features, tension_out_features,
                                hidden_dims=tension_hidden_dims, **mlp_kwargs)
 
     def forward(self, data):
@@ -321,8 +369,8 @@ class SingleMP_Tension(torch.nn.Module):
 
         # aggregate and update stages
         x_out = self.aggr_update( data.x, edge_index, m_ij) # leave last layer as linear, i.e. no ReLU()
-        
+
         # tension model
         e_out = self.tension_mlp(m_ij[:m_ij.size(0)//2,:] +  m_ij[m_ij.size(0)//2 :,:])
-        
+
         return x_out, e_out.reshape((e_out.size(0),)), None
