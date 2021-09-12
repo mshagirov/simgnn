@@ -85,12 +85,13 @@ class IndependentBlock(torch.nn.Module):
 
 
 class Message(torch.nn.Module):
-    '''Updates a graph's edge features by computing messages `mlp([x_src, x_tgt, edge_attr])--> new edge_attr`.'''
-
+    '''
+    Concatenates and processes a list of input_tensors (must have same batch sizes, axis=0). `y=MLP(torch.cat( [*input_tensors], 1))`.
+    '''
     def __init__(self, in_features, out_features, **mlp_kwargs):
         '''
         MLP Arg-s:
-        - in_features : input dim-s == `#src_features` + `#tgt_features` + `#edge_features`.
+        - in_features : (sum of) input dim-s == `#src_features` + `#tgt_features` + `#edge_features` + ... .
         - out_features: output dim-s, e.g. `#edge_features`.
 
         Optional kwargs for `mlp`: hidden_dims =[], dropout_p = 0, Fn = ReLU, Fn_kwargs = {}.
@@ -98,12 +99,9 @@ class Message(torch.nn.Module):
         super(Message, self).__init__()
         self.mlp = mlp(in_features, out_features, **mlp_kwargs)
 
-    def forward(self, src, tgt, edge_attr):
-        '''
-        - src, tgt : source and target features w/ shapes (#edges, #src_features) and (#edges, #tgt_features)
-        - edge_attr : edge features w/ shape (#edges, #edge_features)
-        '''
-        return self.mlp( torch.cat( [src, tgt, edge_attr], 1) )
+    def forward(self, *input_tensors):
+        '''`y=MLP(torch.cat( [*input_tensors], 1))`'''
+        return self.mlp( torch.cat( [*input_tensors], 1) )
 
 
 class DiffMessage(torch.nn.Module):
