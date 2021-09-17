@@ -1,5 +1,5 @@
 import torch
-from torch.nn import Sequential, Linear, ReLU, Dropout
+from torch.nn import ModuleDict, Sequential, Linear, ReLU, Dropout
 from torch_scatter import scatter
 
 
@@ -37,17 +37,36 @@ class mlp(torch.nn.Module):
         return self.layers(x)
 
 
+def dims_to_dict(*mlp_dims):
+    '''
+    Converts/broadcasts MLP dimension arg-s `mlp_dims` (int's or a dict's) to a set of dicts with same keys that
+    represent graph variables. Keys of the dict input arg-s in `mlp_dims` are used if any of the input arg-s is a dict,
+    and default `("node", "edge")` keys are used otherwise. Input arg-s must have same keys if more than one of
+    the `mlp_dims` are dict's.
+    '''
+    n_vars = max([(k, len(mlp_dim) if type(mlp_dim)==dict else 1) for k, mlp_dim in enumerate(mlp_dims) ], key=lambda x: x[1])
+
+    var_names =  ("node", "edge") if n_vars[1]==1 else tuple(mlp_dims[n_vars[0]].keys())
+
+    mlp_dims_out = ({var_k: mlp_dim[var_k] if type(mlp_dim)==dict else mlp_dim for var_k in var_names} for mlp_dim in mlp_dims)
+    return tuple(mlp_dims_out)
+
+
 class IndependentBlock(torch.nn.Module):
     '''
-    Layer w/ two independent node and edge MLPs that use the same `mlp_kwargs` for both MLPs.
-    The last layers are always plain linear layers, i.e. they have no dropout/activations.
+    Layer w/ independent MLPs that all use the same `mlp_kwargs`. The last layer of all MLPs are plain linear layers,
+    i.e. they have no dropout/activations.
 
-    x_enc, e_enc = IndependentBlock(x, e);
+    Example:
+        # Inputs --> x: [#nodes, 10]; e: [#edges, 2], ...
+        # Enc : encodes node and edge features to 32-dim vectors (MLPs w/ one  16-dim hidden layer)
+        Enc = IndependentBlock({'node':10,'edge':2}, 32, hidden_dims=[16])
+        x_enc, e_enc, ... = Enc(x, e, ...);
     '''
     def __init__(self, in_dims, out_dims, hidden_dims=[],**mlp_kwargs):
         '''
         Arg-s:
-            - in_dims : number of input dimensions. Either an int or a dict of integers w/ keys "node" and "edge".
+            - in_dims : number of input dimensions. Either an int or a dict of integers w/ keys "node", "edge", etc..
             - out_dims : number of output dimensions for encoder MLPs. Either an int or a dict of integers.
             - hidden_dims : a list of hidden dimensions {default : [] no hidden layers}, or a dict of lists.
             - mlp_kwargs : kwarg-s for MLPs.
@@ -56,32 +75,16 @@ class IndependentBlock(torch.nn.Module):
         input/output/hidden dimensions for both node and edge MLPs.
         '''
         super(IndependentBlock, self).__init__()
-        if type(in_dims)==dict:
-            node_in = in_dims['node']
-            edge_in = in_dims['edge']
-        else:
-            node_in = in_dims
-            edge_in = in_dims
 
-        if type(out_dims)==dict:
-            node_out = out_dims['node']
-            edge_out = out_dims['edge']
-        else:
-            node_out = out_dims
-            edge_out = out_dims
+        in_dims, out_dims, hidden_dims = dims_to_dict(in_dims, out_dims, hidden_dims)
 
-        if type(hidden_dims)==dict:
-            node_hidden_dims = hidden_dims['node']
-            edge_hidden_dims = hidden_dims['edge']
-        else:
-            node_hidden_dims = hidden_dims
-            edge_hidden_dims = hidden_dims
-
-        self.node_mlp = mlp(node_in, node_out, hidden_dims=node_hidden_dims,**mlp_kwargs)
-        self.edge_mlp = mlp(edge_in, edge_out, hidden_dims=edge_hidden_dims,**mlp_kwargs)
-
-    def forward(self, x, edge_attr):
-        return self.node_mlp(x), self.edge_mlp(edge_attr)
+        self.mlp_dict = ModuleDict({k: mlp(in_dims[k], out_dims[k], hidden_dims=hidden_dims[k],**mlp_kwargs) for k in in_dims})
+    
+    def forward(self, *xs):
+        ys = []
+        for x,k in zip(xs,self.mlp_dict):
+            ys.append(self.mlp_dict[k](x))
+        return tuple(ys)
 
 
 class Message(torch.nn.Module):
