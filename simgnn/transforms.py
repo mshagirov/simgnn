@@ -1,13 +1,17 @@
 import torch
 
+
 class Pos2Vec(object):
     '''Computes edge directions from connected node positions (source to target).'''
-    def __init__(self, norm=True, scale = None, cat=False):
+    def __init__(self, norm=True, scale=None, cat=False):
         '''
         Arg-s:
-        - norm : if True, normalises/scales edge vectors (uses `scale` or maximum component value if scale==None).
-        - scale : scalar s.t. `scale>0`, edge vector componets are divided (scaled) by this value.
-        - cat : if True, concatenates edge vectors to edge attr-s, otherwise replaces current edge attr-s {default : False}.
+        - norm : if True, normalises/scales edge vectors (uses `scale` or maximum
+                 component value if scale==None).
+        - scale : scalar s.t. `scale>0`, edge vector componets are divided (scaled)
+                 by this value.
+        - cat : if True, concatenates edge vectors to edge attr-s, otherwise
+                replaces current edge attr-s {default : False}.
         '''
         self.norm = norm
         self.scale = scale
@@ -17,13 +21,13 @@ class Pos2Vec(object):
         '''
         - data : input graphs (must contain node positions in `data.pos`)
         '''
-        row, col = data.edge_index # src, tgt indices
+        row, col = data.edge_index  # src, tgt indices
 
-        e_vec = data.pos[col] - data.pos[row] # src to tgt vectors
+        e_vec = data.pos[col] - data.pos[row]  # src to tgt vectors
 
         if self.norm and (e_vec.numel() > 0):
             scale = e_vec.abs().max() if (self.scale is None) else self.scale
-            e_vec = e_vec / scale if (scale>0) else e_vec
+            e_vec = e_vec / scale if (scale > 0) else e_vec
 
         if data.edge_attr is not None and self.cat:
             data.edge_attr = data.edge_attr.view(-1, 1) if data.edge_attr.dim() == 1 else data.edge_attr
@@ -47,13 +51,15 @@ class ScaleVar(object):
         Arg-s:
         - scale : a scalar s.t. `scale>0`, `data.x` and `data.y` are divided by `scale`.
         '''
-        assert scale>0
+        assert scale > 0
         self.scale = scale
+
     def __call__(self, data):
         '''
         - data : an input graph.
         '''
         pass
+
     def __repr__(self):
         return '{}(scale={})'.format(self.__class__.__name__, self.scale)
 
@@ -61,7 +67,7 @@ class ScaleVar(object):
 class TransformVar(object):
     '''
     Abstract class for applying non-linear transformations on variables `data.var` w/ a given transformation T
-    s.t. `data.var = self.T(data.var)`. After inheriring `TransformVar` you will need to write the `__call__`, 
+    s.t. `data.var = self.T(data.var)`. After inheriring `TransformVar` you will need to write the `__call__`,
     and optionally the `__repr__` methods.
     '''
     def __init__(self, T):
@@ -70,11 +76,13 @@ class TransformVar(object):
         - t_func : a torch function that can accept `data.var`--a torch tensor as an input, e.g. `torch.log`.
         '''
         self.T = T
+
     def __call__(self, data):
         '''
         - data : an input graph.
         '''
         pass
+
     def __repr__(self):
         return '{}(T={}())'.format(self.__class__.__name__, self.T.__name__)
 
@@ -122,8 +130,9 @@ class ScaleTension(ScaleVar):
         if data.edge_tensions is not None:
             data.edge_tensions = (data.edge_tensions - self.shift)/self.scale
         return data
+
     def __repr__(self):
-        return '{}(scale={}, shift={})'.format(self.__class__.__name__, self.scale,self.shift)
+        return '{}(scale={}, shift={})'.format(self.__class__.__name__, self.scale, self.shift)
 
 
 class ScalePressure(ScaleTension):
@@ -168,7 +177,7 @@ class TransformTension(TransformVar):
             data.edge_tensions = self.T(data.edge_tensions)
         return data
 
-    
+
 class Reshape_x(object):
     '''
     Reshapes attribute `x` (e.g. data.x) using a given shape.
@@ -179,12 +188,14 @@ class Reshape_x(object):
         - shape : new shape for attribute `x`.
         '''
         self.shape = shape
+
     def __call__(self, data):
         '''
         - data : an input graph.
         '''
         data.x = data.x.reshape(self.shape)
         return data
+
     def __repr__(self):
         return '{}({})'.format(self.__class__.__name__, self.shape)
 
@@ -200,5 +211,6 @@ class RecoilAsTension(object):
         if data.edge_recoils is not None:
             data.edge_tensions = data.edge_recoils.detach().clone()
         return data
+
     def __repr__(self):
         return '{}()'.format(self.__class__.__name__)

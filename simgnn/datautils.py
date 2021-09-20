@@ -1,20 +1,20 @@
-__all__ = ['write_array', 'load_array', 'write_graph', 'load_graph', 'mknewdir']
+__all__ = ['simple_moving_average', 'mknewdir', 'write_array', 'load_array', 'write_graph', 'load_graph']
 import numpy as np
 import pickle
 from os import mkdir
 
 
-def simple_moving_average(vtxpos,lag_time=4):
+def simple_moving_average(vtxpos, lag_time=4):
     '''
     Compute simple moving average along time axis, which is assumed to be the first axis (axis=0).
-    
+
     - lag_time : lag time for past values, a number of past values to use. Moving average at
                  time `t` uses `lagtime+1` values including the current value x[t], i.e. average of
                  `{ x[t-lagtime], x[t+1-lagtime], ..., x[t]}`.
     '''
     vtxpos_sma = np.zeros_like(vtxpos)
     vtxpos_sma[0] = vtxpos[0]
-    for t in range(1,vtxpos.shape[0]):
+    for t in range(1, vtxpos.shape[0]):
         vtxpos_sma[t] = vtxpos[max([t-lag_time, 0]):t+1].mean(axis=0)
     return vtxpos_sma
 
@@ -62,7 +62,7 @@ def write_graph(fpath, m):
     Edges and and cells are saved as a dictionary object with keys 'edges' and 'cells'.
     '''
     with open(fpath, 'wb') as f:
-        pickle.dump({'edges':m.edges.tolist(), 'cells':m.cells}, f)
+        pickle.dump({'edges': m.edges.tolist(), 'cells': m.cells}, f)
 
 
 def load_graph(fpath):

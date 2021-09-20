@@ -4,34 +4,36 @@ from torch_scatter import scatter
 from collections import OrderedDict
 
 
-
 class mlp(torch.nn.Module):
     '''
-    MLP consisting of multiple linear layers w/ activation func-s (`Fn`). Last layer is always linear layer w/o activation.
+    MLP consisting of multiple linear layers w/ activation func-s (`Fn`). Last
+    layer is always linear layer w/o activation.
 
     The last layer is a linear layer, i.e. it has no dropout/activation.
     '''
 
-    def __init__(self, in_features, out_features, hidden_dims=[], dropout_p=0, Fn=ReLU, Fn_kwargs={}):
+    def __init__(self, in_features, out_features, hidden_dims=[], dropout_p=0,
+                 Fn=ReLU, Fn_kwargs={}):
         '''
         - in_features : input dim-s.
         - out_features: output dim-s.
-        - hidden_dims : a list of hidden dim-s (number of hidden layer neurons) {default : [] an empty list, i.e. no hidden layers}
+        - hidden_dims : a list of hidden dim-s (number of hidden layer neurons)
+                        {default : [] an empty list, i.e. no hidden layers}
         - dropout_p   : dropout prob-y for hidden layer(s) {default :  0}.
         - Fn : activation function for hidden layers { default: ReLU }
         - Fn_kwargs : keyword arg-s for `Fn` {default : an empty dict.}
         '''
         super(mlp, self).__init__()
 
-        layers_in = [in_features] + hidden_dims # in_features for all layers
+        layers_in = [in_features] + hidden_dims  # in_features for all layers
 
         layers = []
-        for l, hn in enumerate(hidden_dims):
-            layers.append( Linear( layers_in[l], hn)) #append first and hidden layers
-            layers.append( Fn(**Fn_kwargs))
+        for itm, hn in enumerate(hidden_dims):
+            layers.append(Linear(layers_in[itm], hn))  # append first & hid-ns
+            layers.append(Fn(**Fn_kwargs))
             if dropout_p:
-                layers.append( Dropout(p=dropout_p))
-        layers.append( Linear( layers_in[-1], out_features))
+                layers.append(Dropout(p=dropout_p))
+        layers.append(Linear(layers_in[-1], out_features))
 
         self.layers = Sequential(*layers)
 
@@ -42,126 +44,154 @@ class mlp(torch.nn.Module):
 def dims_to_dict(*mlp_dims):
     '''
     Converts/broadcasts MLP dimension arg-s `mlp_dims` (int, dict, OrderedDict)
-    to a set of OrderedDict's with same keys (keys represent graph variables). Keys
-    of the dict/OrderedDict input arg-s in `mlp_dims` are used if any of the
-    input arg-s is a dict or OrderedDict, or default `("node", "edge")` keys are used
-    otherwise. Input arg-s must have the same keys (and same ordering) if more than
-    one of the `mlp_dims` are dict/OrderedDict's. For python versions earlier than v3.7
-    use OrderedDict in order to retain order of the dictionary keys.
+    to a set of OrderedDict's with same keys (keys represent graph variables).
+    Keys of the dict/OrderedDict input arg-s in `mlp_dims` are used if any of
+    the input arg-s is a dict or OrderedDict, or default ("node", "edge") keys
+    are used otherwise. Input arg-s must have the same keys (and same ordering)
+    if more than one of the `mlp_dims` are dict/OrderedDict's. For python
+    versions earlier than v3.7 use OrderedDict in order to retain order
+    of the dictionary keys.
     '''
     def is_dict(d):
-        return True if type(d)==dict or type(d)==OrderedDict else False
+        return True if type(d) == dict or type(d) == OrderedDict else False
 
-    n_vars = max([(k, len(mlp_dim) if is_dict(mlp_dim) else 1) for k, mlp_dim in enumerate(mlp_dims) ], key=lambda x: x[1])
+    n_vars = max([(k, len(mlp_dim) if is_dict(mlp_dim) else 1)
+                  for k, mlp_dim in enumerate(mlp_dims)], key=lambda x: x[1])
 
-    var_names =  ("node", "edge") if n_vars[1]==1 else tuple(mlp_dims[n_vars[0]].keys())
+    var_names = ("node", "edge") if n_vars[1] == 1 \
+        else tuple(mlp_dims[n_vars[0]].keys())
 
-    mlp_dims_out = ( OrderedDict( ( (var_k, mlp_dim[var_k] if is_dict(mlp_dim) else mlp_dim) for var_k in var_names) )
-                    for mlp_dim in mlp_dims )
+    mlp_dims_out = (
+        OrderedDict(
+                    ((var_k, mlp_dim[var_k] if is_dict(mlp_dim) else mlp_dim)
+                        for var_k in var_names)) for mlp_dim in mlp_dims
+                    )
     return tuple(mlp_dims_out)
 
 
 class IndependentBlock(torch.nn.Module):
     '''
-    Layer w/ independent MLPs that all use the same `mlp_kwargs`. The last layer of all MLPs are plain linear layers,
-    i.e. they have no dropout/activations.
+    Layer w/ independent MLPs that all use the same `mlp_kwargs`. The last
+    layer of all MLPs are plain linear layers, i.e. they have no dropout/
+    activations.
 
     Example:
         # Inputs --> x: [#nodes, 10]; e: [#edges, 2], ...
-        # Enc : encodes node and edge features to 32-dim vectors (MLPs w/ one  16-dim hidden layer)
+        # Enc : encodes node and edge features to 32-dim vectors (MLPs w/ one
+        16-dim hidden layer)
         Enc = IndependentBlock({'node':10,'edge':2}, 32, hidden_dims=[16])
         x_enc, e_enc, ... = Enc(x, e, ...);
     '''
-    def __init__(self, in_dims, out_dims, hidden_dims=[],**mlp_kwargs):
+    def __init__(self, in_dims, out_dims, hidden_dims=[], **mlp_kwargs):
         '''
         Arg-s:
             - in_dims, out_dims : number of input and output dim-s. Either an
-            int (all MLPs will have same input/output dim-s) or a dict of integers w/ keys "node", "edge", etc..
-            E.g. {'node':10,'edge':2, ...}
-            - hidden_dims : a list of hidden dimensions {default : [] no hidden layers}, or a dict of lists.
-            E.g. {'node':[],'edge':[8,16], ...}
+              int (all MLPs will have same input/output dim-s) or a dict of
+              integers w/ keys "node", "edge", etc..
+              E.g. {'node':10,'edge':2, ...}
+            - hidden_dims : a list of hidden dimensions {default : [] no hidden
+            layers}, or a dict of lists. E.g. {'node':[],'edge':[8,16], ...}
             - mlp_kwargs : kwarg-s for MLPs.
 
         Notes:
-            - In order to have same input, output or hidden dimensions for all MLPs use integers for `in_dims`,
-            `out_dims`, and a list for `hidden_dims`, instead of dictionaries.
-            - Order of the dict keys is used for an input order for the forward function. If more than one of
-            the input arguments ( in_dims, out_dims, hidden_dims) are dict, it is assumed that they all have
-            the same keys and ordering for keys. Default order for dict keys, when using an `int` for `in_dims`,
-            `out_dims`, and a `list` for `hidden_dims` is ['node', 'edge'] (all MLPs have same dimensions).
-            For python versions <3.7 use int or `OrderedDict` for consistent order of the dictionary keys. For
-            further details see doc and code for `simgnn.nn.dims_to_dict`.
+            - In order to have same input, output or hidden dimensions for all
+              MLPs use integers for `in_dims`, `out_dims`, and a list for
+              `hidden_dims`, instead of dictionaries.
+            - Order of the dict keys is used for an input order for the forward
+              function. If more than one of the input arguments ( in_dims,
+              out_dims, hidden_dims) are dict, it is assumed that they all have
+              the same keys and ordering for keys. Default order for dict keys,
+              when using an `int` for `in_dims`, `out_dims`, and a `list` for
+              `hidden_dims` is ['node', 'edge'] (MLPs have same dimensions).
+              For python versions <3.7 use int or `OrderedDict` for consistent
+              order of the dictionary keys. For further details see doc and
+              code for `simgnn.nn.dims_to_dict`.
         '''
         super(IndependentBlock, self).__init__()
 
-        in_dims, out_dims, hidden_dims = dims_to_dict(in_dims, out_dims, hidden_dims)
+        in_dims, out_dims, hidden_dims = dims_to_dict(in_dims, out_dims,
+                                                      hidden_dims)
 
-        self.mlp_dict = ModuleDict({k: mlp(in_dims[k], out_dims[k], hidden_dims=hidden_dims[k],**mlp_kwargs) for k in in_dims})
+        self.mlp_dict = ModuleDict({k: mlp(in_dims[k], out_dims[k],
+                                           hidden_dims=hidden_dims[k],
+                                           **mlp_kwargs) for k in in_dims})
 
     def forward(self, *xs):
         ys = []
-        for x,k in zip(xs,self.mlp_dict):
+        for x, k in zip(xs, self.mlp_dict):
             ys.append(self.mlp_dict[k](x))
         return tuple(ys)
 
 
 class Message(torch.nn.Module):
     '''
-    Concatenates and processes a list of input_tensors (must have same batch sizes, axis=0). `y=MLP(torch.cat( [*input_tensors], 1))`.
+    Concatenates and processes a list of input_tensors (must have same batch
+    sizes, axis=0). `y=MLP(torch.cat( [*input_tensors], 1))`.
     '''
     def __init__(self, in_features, out_features, **mlp_kwargs):
         '''
         MLP Arg-s:
-        - in_features : (sum of) input dim-s == `#src_features` + `#tgt_features` + `#edge_features` + ... .
+        - in_features : (sum of) input dim-s ==
+                   `#src_features` + `#tgt_features` + `#edge_features` + ... .
         - out_features: output dim-s, e.g. `#edge_features`.
 
-        Optional kwargs for `mlp`: hidden_dims =[], dropout_p = 0, Fn = ReLU, Fn_kwargs = {}.
+        Optional kwargs for `mlp`:
+                     hidden_dims =[], dropout_p = 0, Fn = ReLU, Fn_kwargs = {}.
         '''
         super(Message, self).__init__()
         self.mlp = mlp(in_features, out_features, **mlp_kwargs)
 
     def forward(self, *input_tensors):
         '''`y=MLP(torch.cat( [*input_tensors], 1))`'''
-        return self.mlp( torch.cat( [*input_tensors], 1) )
+        return self.mlp(torch.cat([*input_tensors], 1))
 
 
 class DiffMessage(torch.nn.Module):
     '''
-    Updates a graph's edge features by computing messages `mlp([ x_tgt - x_src, edge_attr])--> new edge_attr`.
+    Updates a graph's edge features by computing messages
+    `mlp([ x_tgt - x_src, edge_attr])--> new edge_attr`.
 
     Uses differences in x_tgt - x_src rather than concatenating them.
     '''
-
     def __init__(self, in_features, out_features, **mlp_kwargs):
         '''
         MLP Arg-s:
-        - in_features : input dim-s == `#src_features` + `#edge_features`. Assumes `#tgt_features`==`#src_features`.
+        - in_features : input dim-s == `#src_features` + `#edge_features`.
+        Assumes `#tgt_features`==`#src_features`.
         - out_features: output dim-s, e.g. `#edge_features`.
 
-        Optional kwargs for `mlp`: hidden_dims =[], dropout_p = 0, Fn = ReLU, Fn_kwargs = {}.
+        Optional kwargs for `mlp`:
+                hidden_dims =[], dropout_p = 0, Fn = ReLU, Fn_kwargs = {}.
         '''
         super(DiffMessage, self).__init__()
         self.mlp = mlp(in_features, out_features, **mlp_kwargs)
 
     def forward(self, src, tgt, edge_attr):
         '''
-        - src, tgt : source and target features w/ shapes (#edges, #src_features) and (#edges, #tgt_features)
+        - src, tgt : source and target features w/ shapes
+                     (#edges, #src_features) and (#edges, #tgt_features)
         - edge_attr : edge features w/ shape (#edges, #edge_features)
         '''
-        return self.mlp( torch.cat( [tgt - src, edge_attr], 1) )
+        return self.mlp(torch.cat([tgt - src, edge_attr], 1))
 
 
 class AggregateUpdate(torch.nn.Module):
-    '''Aggregates messages (`edge_attr`) from neighbouring nodes and updates node attributes.'''
-
+    '''
+    Aggregates messages (`edge_attr`) from neighbouring nodes and updates node
+    attributes.
+    '''
     def __init__(self, in_features, out_features, aggr='mean', **mlp_kwargs):
         '''
         Arg-s:
-        - in_features : input dim-s == `#node_features + #edge_features`. (MLP for updating x:node_features)
-        - out_features: output dim-s, updated node fetaures, `#new_node_features`. (MLP for updating x:node_features)
-        - aggr : aggregation scheme, one of `['sum', 'mul', 'mean', 'min', 'max']` {default: 'mean'}.
+        - in_features : input dim-s ==
+          `#node_features + #edge_features`. (MLP for updating x:node_features)
+        - out_features: output dim-s, updated node fetaures,
+                       `#new_node_features`. (MLP for updating x:node_features)
+        - aggr : aggregation scheme, one of `['sum', 'mul', 'mean', 'min',
+                 'max']` {default: 'mean'}.
 
-        Optional kwargs for `mlp`: hidden_dims =[], dropout_p = 0, Fn = ReLU, Fn_kwargs = {}.
+        Optional kwargs for `mlp`:
+                     hidden_dims =[], dropout_p = 0, Fn = ReLU, Fn_kwargs = {}.
         '''
         super(AggregateUpdate, self).__init__()
         assert aggr in ['sum', 'mul', 'mean', 'min', 'max']
@@ -171,13 +201,15 @@ class AggregateUpdate(torch.nn.Module):
     def forward(self, x, edge_index, edge_attr):
         '''
         - x : node features w/ shape (#nodes, #node_features)
-        - edge_index : edge index (pairs of "src" and "tgt" indices) w/ shape (2, #edges)
+        - edge_index : edge index (pairs of "src" and "tgt" indices) w/
+                       shape (2, #edges)
         - edge_attr : edge features w/ shape (#edges, #edge_features)
         '''
-        row, col = edge_index # (src, tgt) indices
-        out = scatter(edge_attr, col, dim=0, dim_size=x.size(0), reduce=self.aggr) # aggregate mssgs at "targets"
-        out = torch.cat([x, out], dim=1) # concat w/ tgt node features
-        out = self.mlp( out ) # update node features
+        row, col = edge_index  # (src, tgt) indices
+        out = scatter(edge_attr, col, dim=0, dim_size=x.size(0),
+                      reduce=self.aggr)  # aggregate mssgs at "targets"
+        out = torch.cat([x, out], dim=1)  # concat w/ tgt node features
+        out = self.mlp(out)  # update node features
         return out
 
 
@@ -187,7 +219,8 @@ class Aggregate(torch.nn.Module):
     def __init__(self, aggr='mean'):
         '''
         Arg-s:
-        - aggr : aggregation scheme, one of `['sum', 'mul', 'mean', 'min', 'max']` {default: 'mean'}.
+        - aggr : aggregation scheme, one of `['sum', 'mul', 'mean', 'min',
+                'max']` {default: 'mean'}.
         '''
         super(Aggregate, self).__init__()
         assert aggr in ['sum', 'mul', 'mean', 'min', 'max']
@@ -196,10 +229,12 @@ class Aggregate(torch.nn.Module):
     def forward(self, dim_size, edge_index, edge_attr):
         '''
         - dim_size : number of output nodes :int
-        - edge_index : edge index (pairs of "src" and "tgt" indices) w/ shape (2, #edges)
+        - edge_index : edge index (pairs of "src" and "tgt" indices) w/
+                       shape (2, #edges)
         - edge_attr : edge features w/ shape (#edges, #edge_features)
         '''
-        out = scatter(edge_attr, edge_index[1], dim=0, dim_size=dim_size, reduce=self.aggr) # aggregate mssgs at "targets"
+        out = scatter(edge_attr, edge_index[1], dim=0, dim_size=dim_size,
+                      reduce=self.aggr)  # aggregate mssgs at "targets"
         return out
 
 
@@ -208,81 +243,101 @@ class Plain_MLP(torch.nn.Module):
 
     Returns tuple (y_pred, None, None):
     - y_pred: is an output of `y_pred = MLP(data.x)`.
-    - The two nones are just place holders to make MLP compatible with training function in `train.py`.
+    - The two nones are just place holders to make MLP compatible with training
+      function in `train.py`.
     '''
     def __init__(self, in_features=10, out_features=2, **mlp_kwargs):
         '''
         MLP Arg-s:
         - in_features : #input features
         - out_features: #output features
-        - Optional kwargs for `mlp`: hidden_dims =[], dropout_p = 0, Fn = ReLU, Fn_kwargs = {}.
+        - Optional kwargs for `mlp`:
+                     hidden_dims =[], dropout_p = 0, Fn = ReLU, Fn_kwargs = {}.
         '''
         super(Plain_MLP, self).__init__()
         self.mlp = mlp(in_features, out_features, **mlp_kwargs)
+
     def forward(self, data):
-        return self.mlp( data.x ), None, None
+        return self.mlp(data.x), None, None
 
 
 class PlainSquaredMLP(torch.nn.Module):
     '''Simple MLP for processing pt-geometric graph vertex features `data.x`.
 
     Returns tuple (y_pred, None, None):
-    - y_pred: is an output of `y_pred = PlainSquaredMLP(data.x)`. PlainSquaredMLP(x)=MLP([x,x^2])
-    - The two nones are just place holders to make MLP compatible with training function in `train.py`.
+    - y_pred: is an output of `y_pred = PlainSquaredMLP(data.x)`.
+              PlainSquaredMLP(x)=MLP([x,x^2])
+    - The two nones are just place holders to make MLP compatible with training
+      function in `train.py`.
     '''
     def __init__(self, in_features=10, out_features=2, **mlp_kwargs):
         '''
         MLP Arg-s:
         - in_features : #input features
         - out_features: #output features
-        - Optional kwargs for `mlp`: hidden_dims =[], dropout_p = 0, Fn = ReLU, Fn_kwargs = {}.
+        - Optional kwargs for `mlp`:
+                    hidden_dims =[], dropout_p = 0, Fn = ReLU, Fn_kwargs = {}.
         '''
         super(PlainSquaredMLP, self).__init__()
         self.mlp = mlp(in_features*2, out_features, **mlp_kwargs)
+
     def forward(self, data):
-        return self.mlp( torch.cat([data.x,data.x**2],dim=1)), None, None
+        return self.mlp(torch.cat([data.x, data.x**2], dim=1)), None, None
 
 
 class Single_MP_step(torch.nn.Module):
     '''
     Returns tuple (y_pred, None, None):
     - y_pred: is a node-wise output (e.g. node velocity)
-    - The two `None`s are just place holders to make model compatible with training function in `train.py`.
+    - The two `None`s are just place holders to make model compatible with
+      training function in `train.py`.
     '''
-    def __init__(self, node_in_features=10, node_out_features=2, edge_in_features=2,
-                 message_out_features=5, message_hidden_dims=[10], update_hidden_dims = [],aggr='mean', **mlp_kwargs):
+    def __init__(self, node_in_features=10, node_out_features=2,
+                 edge_in_features=2, message_out_features=5,
+                 message_hidden_dims=[10], update_hidden_dims=[],
+                 aggr='mean', **mlp_kwargs):
         '''
         Arg-s:
         - node_in_features : #input node features
         - node_out_features: #output node features
         - edge_in_features : #input edge features
-        - message_out_features : #message features (edge-wise messages, can be considered as new or intermediate edge features )
-        - message_hidden_dims : list of #dims for message MLP=phi. For edge s->t: m_st = phi([x_t - x_s, e_st]).
-        - update_hidden_dims : list of #dims for update MLP=gamma. For node i : x_i' = gamma(x_i, Aggregate(m_si))
-        - Optional kwargs for both MLPs: defaults are `dropout_p = 0`, `Fn = ReLU`, `Fn_kwargs = {}`.
+        - message_out_features : #message features (edge-wise messages, can be
+                              considered as new or intermediate edge features)
+        - message_hidden_dims : list of #dims for message MLP=phi. For
+                                edge s->t: m_st = phi([x_t - x_s, e_st]).
+        - update_hidden_dims : list of #dims for update MLP=gamma. For
+                               node i : x_i' = gamma(x_i, Aggregate(m_si))
+        - Optional kwargs for both MLPs:
+                   defaults are `dropout_p = 0`, `Fn = ReLU`, `Fn_kwargs = {}`.
         '''
         super(Single_MP_step, self).__init__()
 
         self.message = DiffMessage(node_in_features+edge_in_features,
                                    message_out_features,
-                                   hidden_dims=message_hidden_dims, **mlp_kwargs)
+                                   hidden_dims=message_hidden_dims,
+                                   **mlp_kwargs)
         self.relu = torch.nn.ReLU()
-        self.aggr_update = AggregateUpdate(node_in_features+message_out_features,
-                                           node_out_features, hidden_dims=update_hidden_dims, aggr=aggr, **mlp_kwargs)
+
+        n_input_features = node_in_features + message_out_features
+        self.aggr_update = AggregateUpdate(n_input_features, node_out_features,
+                                           hidden_dims=update_hidden_dims,
+                                           aggr=aggr, **mlp_kwargs)
 
     def forward(self, data):
         # convert to undirected graph : cat([e_ij, e_ji])
-        edge_index = torch.cat([ data.edge_index, torch.stack([data.edge_index[1],
-                                                               data.edge_index[0]], dim=0) ], dim=1).contiguous()
+        edge_index = torch.cat([data.edge_index,
+                                torch.stack([data.edge_index[1],
+                                             data.edge_index[0]], dim=0)],
+                               dim=1).contiguous()
         # edge features for undirected graph : e_ij = - e_ji
-        edge_attr  = torch.cat([ data.edge_attr, -data.edge_attr], dim=0).contiguous()
+        edge_attr = torch.cat([data.edge_attr, -data.edge_attr], dim=0).contiguous()
 
         # message
-        src, tgt = data.x[edge_index[0]], data.x[edge_index[1]] # src, tgt features
-        m_ij = self.relu( self.message(src, tgt, edge_attr) )
+        src, tgt = data.x[edge_index[0]], data.x[edge_index[1]]  # src, tgt features
+        m_ij = self.relu(self.message(src, tgt, edge_attr))
 
-        # aggregate and update stages
-        x_out = self.aggr_update( data.x, edge_index, m_ij) # leave last layer as linear, i.e. no ReLU()
+        # aggregate and update stages; last layer is linear, i.e. no ReLU()
+        x_out = self.aggr_update(data.x, edge_index, m_ij)
         return x_out, None, None
 
 
@@ -303,18 +358,20 @@ class DiffMessageSquared(torch.nn.Module):
         - src, tgt : source and target features w/ shapes (#edges, #src_features) and (#edges, #tgt_features)
         - edge_attr : edge features w/ shape (#edges, #edge_features)
         '''
-        return self.mlp( torch.cat( [tgt - src,(tgt - src)**2, edge_attr], dim=1) )
+        return self.mlp(torch.cat([tgt - src, (tgt - src)**2, edge_attr], dim=1))
 
 
 class SingleMPStepSquared(torch.nn.Module):
     def __init__(self, node_in_features=10, node_out_features=2, edge_in_features=2,
-                 message_out_features=5, message_hidden_dims=[10], update_hidden_dims = [],aggr='mean', **mlp_kwargs):
+                 message_out_features=5, message_hidden_dims=[10], update_hidden_dims=[],
+                 aggr='mean', **mlp_kwargs):
         '''
         Arg-s:
         - node_in_features : #input node features
         - node_out_features: #output node features
         - edge_in_features : #input edge features
-        - message_out_features : #message features (edge-wise messages, can be considered as new or intermediate edge features )
+        - message_out_features : #message features (edge-wise messages, can be considered as
+                                 new or intermediate edge features )
         - message_hidden_dims : list of #dims for message MLP=phi. For edge s->t: m_st = phi([x_t - x_s, e_st]).
         - update_hidden_dims : list of #dims for update MLP=gamma. For node i : x_i' = gamma(x_i, Aggregate(m_si))
         - Optional kwargs for both MLPs: defaults are `dropout_p = 0`, `Fn = ReLU`, `Fn_kwargs = {}`.
@@ -330,18 +387,19 @@ class SingleMPStepSquared(torch.nn.Module):
 
     def forward(self, data):
         # convert to undirected graph : cat([e_ij, e_ji])
-        edge_index = torch.cat([ data.edge_index, torch.stack([data.edge_index[1],
-                                                               data.edge_index[0]], dim=0) ], dim=1).contiguous()
+        edge_index = torch.cat([data.edge_index,
+                                torch.stack([data.edge_index[1], data.edge_index[0]], dim=0)],
+                               dim=1).contiguous()
         # edge features for undirected graph : e_ij = - e_ji
-        edge_attr  = torch.cat([ data.edge_attr, -data.edge_attr], dim=0).contiguous()
+        edge_attr = torch.cat([data.edge_attr, -data.edge_attr], dim=0).contiguous()
 
         # message
-        src, tgt = data.x[edge_index[0]], data.x[edge_index[1]] # src, tgt features
-        m_ij = self.relu( self.message(src, tgt, edge_attr) )
+        src, tgt = data.x[edge_index[0]], data.x[edge_index[1]]  # src, tgt features
+        m_ij = self.relu(self.message(src, tgt, edge_attr))
 
         # aggregate and update stages
-        x_out = self.aggr_update( torch.cat([data.x,data.x**2],dim=1),
-                                 edge_index, m_ij) # leave last layer as linear, i.e. no ReLU()
+        x_out = self.aggr_update(torch.cat([data.x, data.x**2], dim=1),
+                                 edge_index, m_ij)  # leave last layer as linear, i.e. no ReLU()
         return x_out, None, None
 
 
@@ -352,14 +410,15 @@ class SingleMP_Tension(torch.nn.Module):
     - The two `None`s are just place holders to make model compatible with training function in `train.py`.
     '''
     def __init__(self, node_in_features=10, node_out_features=2, edge_in_features=2,
-                 message_out_features=5, message_hidden_dims=[10], update_hidden_dims = [],aggr='mean',
-                 tension_out_features=1, tension_hidden_dims=[5], **mlp_kwargs):
+                 message_out_features=5, message_hidden_dims=[10], update_hidden_dims=[],
+                 aggr='mean', tension_out_features=1, tension_hidden_dims=[5], **mlp_kwargs):
         '''
         Arg-s:
         - node_in_features : #input node features
         - node_out_features: #output node features
         - edge_in_features : #input edge features
-        - message_out_features : #message features (edge-wise messages, can be considered as new or intermediate edge features )
+        - message_out_features : #message features (edge-wise messages, can be considered
+                                 as new or intermediate edge features )
         - message_hidden_dims : list of #dims for message MLP=phi. For edge s->t: m_st = phi([x_t - x_s, e_st]).
         - update_hidden_dims : list of #dims for update MLP=gamma. For node i : x_i' = gamma(x_i, Aggregate(m_si))
         - Optional kwargs for both MLPs: defaults are `dropout_p = 0`, `Fn = ReLU`, `Fn_kwargs = {}`.
@@ -377,19 +436,20 @@ class SingleMP_Tension(torch.nn.Module):
 
     def forward(self, data):
         # convert to undirected graph : cat([e_ij, e_ji])
-        edge_index = torch.cat([ data.edge_index, torch.stack([data.edge_index[1],
-                                                               data.edge_index[0]], dim=0) ], dim=1).contiguous()
+        edge_index = torch.cat([data.edge_index,
+                                torch.stack([data.edge_index[1], data.edge_index[0]], dim=0)],
+                               dim=1).contiguous()
         # edge features for undirected graph : e_ij = - e_ji
-        edge_attr  = torch.cat([ data.edge_attr, -data.edge_attr], dim=0).contiguous()
+        edge_attr = torch.cat([data.edge_attr, -data.edge_attr], dim=0).contiguous()
 
         # message
-        src, tgt = data.x[edge_index[0]], data.x[edge_index[1]] # src, tgt features
-        m_ij = self.relu( self.message(src, tgt, edge_attr) )
+        src, tgt = data.x[edge_index[0]], data.x[edge_index[1]]  # src, tgt features
+        m_ij = self.relu(self.message(src, tgt, edge_attr))
 
         # aggregate and update stages
-        x_out = self.aggr_update( data.x, edge_index, m_ij) # leave last layer as linear, i.e. no ReLU()
+        x_out = self.aggr_update(data.x, edge_index, m_ij)  # leave last layer as linear, i.e. no ReLU()
 
         # tension model
-        e_out = self.tension_mlp(m_ij[:m_ij.size(0)//2,:] +  m_ij[m_ij.size(0)//2 :,:])
+        e_out = self.tension_mlp(m_ij[:m_ij.size(0)//2, :] + m_ij[(m_ij.size(0)//2):, :])
 
         return x_out, e_out.reshape((e_out.size(0),)), None
