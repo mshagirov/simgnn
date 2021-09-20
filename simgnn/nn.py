@@ -1,6 +1,8 @@
 import torch
 from torch.nn import ModuleDict, Sequential, Linear, ReLU, Dropout
 from torch_scatter import scatter
+from collections import OrderedDict
+
 
 
 class mlp(torch.nn.Module):
@@ -39,16 +41,23 @@ class mlp(torch.nn.Module):
 
 def dims_to_dict(*mlp_dims):
     '''
-    Converts/broadcasts MLP dimension arg-s `mlp_dims` (int's or a dict's) to a set of dicts with same keys that
-    represent graph variables. Keys of the dict input arg-s in `mlp_dims` are used if any of the input arg-s is a dict,
-    and default `("node", "edge")` keys are used otherwise. Input arg-s must have same keys if more than one of
-    the `mlp_dims` are dict's.
+    Converts/broadcasts MLP dimension arg-s `mlp_dims` (int, dict, OrderedDict)
+    to a set of OrderedDict's with same keys (keys represent graph variables). Keys
+    of the dict/OrderedDict input arg-s in `mlp_dims` are used if any of the
+    input arg-s is a dict or OrderedDict, or default `("node", "edge")` keys are used
+    otherwise. Input arg-s must have the same keys (and same ordering) if more than
+    one of the `mlp_dims` are dict/OrderedDict's. For python versions earlier than v3.7
+    use OrderedDict in order to retain order of the dictionary keys.
     '''
-    n_vars = max([(k, len(mlp_dim) if type(mlp_dim)==dict else 1) for k, mlp_dim in enumerate(mlp_dims) ], key=lambda x: x[1])
+    def is_dict(d):
+        return True if type(d)==dict or type(d)==OrderedDict else False
+
+    n_vars = max([(k, len(mlp_dim) if is_dict(mlp_dim) else 1) for k, mlp_dim in enumerate(mlp_dims) ], key=lambda x: x[1])
 
     var_names =  ("node", "edge") if n_vars[1]==1 else tuple(mlp_dims[n_vars[0]].keys())
 
-    mlp_dims_out = ({var_k: mlp_dim[var_k] if type(mlp_dim)==dict else mlp_dim for var_k in var_names} for mlp_dim in mlp_dims)
+    mlp_dims_out = ( OrderedDict( ( (var_k, mlp_dim[var_k] if is_dict(mlp_dim) else mlp_dim) for var_k in var_names) )
+                    for mlp_dim in mlp_dims )
     return tuple(mlp_dims_out)
 
 
@@ -66,20 +75,29 @@ class IndependentBlock(torch.nn.Module):
     def __init__(self, in_dims, out_dims, hidden_dims=[],**mlp_kwargs):
         '''
         Arg-s:
-            - in_dims : number of input dimensions. Either an int or a dict of integers w/ keys "node", "edge", etc..
-            - out_dims : number of output dimensions for encoder MLPs. Either an int or a dict of integers.
+            - in_dims, out_dims : number of input and output dim-s. Either an
+            int (all MLPs will have same input/output dim-s) or a dict of integers w/ keys "node", "edge", etc..
+            E.g. {'node':10,'edge':2, ...}
             - hidden_dims : a list of hidden dimensions {default : [] no hidden layers}, or a dict of lists.
+            E.g. {'node':[],'edge':[8,16], ...}
             - mlp_kwargs : kwarg-s for MLPs.
 
-        For `in_dims`, `out_dims` use integers, and for `hidden_dims` use a list in order to have same
-        input/output/hidden dimensions for both node and edge MLPs.
+        Notes:
+            - In order to have same input, output or hidden dimensions for all MLPs use integers for `in_dims`,
+            `out_dims`, and a list for `hidden_dims`, instead of dictionaries.
+            - Order of the dict keys is used for an input order for the forward function. If more than one of
+            the input arguments ( in_dims, out_dims, hidden_dims) are dict, it is assumed that they all have
+            the same keys and ordering for keys. Default order for dict keys, when using an `int` for `in_dims`,
+            `out_dims`, and a `list` for `hidden_dims` is ['node', 'edge'] (all MLPs have same dimensions).
+            For python versions <3.7 use int or `OrderedDict` for consistent order of the dictionary keys. For
+            further details see doc and code for `simgnn.nn.dims_to_dict`.
         '''
         super(IndependentBlock, self).__init__()
 
         in_dims, out_dims, hidden_dims = dims_to_dict(in_dims, out_dims, hidden_dims)
 
         self.mlp_dict = ModuleDict({k: mlp(in_dims[k], out_dims[k], hidden_dims=hidden_dims[k],**mlp_kwargs) for k in in_dims})
-    
+
     def forward(self, *xs):
         ys = []
         for x,k in zip(xs,self.mlp_dict):
