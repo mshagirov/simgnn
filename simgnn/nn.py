@@ -1,5 +1,5 @@
 import torch
-from torch.nn import ModuleDict, Sequential, Linear, ReLU, Dropout
+from torch.nn import ModuleDict, ModuleList, Sequential, Linear, ReLU, Dropout
 from torch_scatter import scatter
 from collections import OrderedDict
 
@@ -308,6 +308,18 @@ class EdgeUpdate(torch.nn.Module):
         return x, edge_index, h_e
 
 
+class SequentialUpdate(torch.nn.Module):
+    def __init__(self, *f_vars):
+        super(SequentialUpdate, self).__init__()
+        self.updates = ModuleList(f_vars)
+
+    def forward(self, x, edge_index, edge_attr):
+        h_v, h_e = x, edge_attr
+        for layer in self.updates:
+            h_v, _, h_e = layer(h_v, edge_index, h_e)
+        return h_v, edge_index, h_e
+
+
 class ParallelUpdate(torch.nn.Module):
     def __init__(self, f_node, f_edge):
         super(ParallelUpdate, self).__init__()
@@ -327,8 +339,8 @@ class ParallelUpdate(torch.nn.Module):
 
 class MessageBlock(torch.nn.Module):
     '''
-    Vanilla message passing block that uses one aggregate, concatenation for node-to-edge or
-    one of aggregation schemes (`aggr`) for edge-to-node, and one update (MLP) function per
+    Vanilla message passing block that uses one aggregate (concatenation for node-to-edge or
+    one of aggregation schemes `aggr` for edge-to-node,) and one update (MLP) function per
     graph variable. The sequence of aggregate+update steps for variables {node, edge} can be
     one of edge-then-node ("e"), node-then-edge ("n"), or  parallel/simulataneous
     ("p") update given with an input argument `updt`.
@@ -384,7 +396,7 @@ class MessageBlock(torch.nn.Module):
             self.layers = ParallelUpdate(f_var['node'], f_var['edge'])
         else:
             f_update = {'node': NodeUpdate, 'edge': EdgeUpdate}
-            self.layers = Sequential(*(f_update[k](f_var[k]) for k in seq))
+            self.layers = SequentialUpdate(*(f_update[k](f_var[k]) for k in seq))
 
     def forward(self, x, edge_index, edge_attr):
         '''
