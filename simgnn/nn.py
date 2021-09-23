@@ -41,6 +41,32 @@ class mlp(torch.nn.Module):
         return self.layers(x)
 
 
+class SelectiveActivation(torch.nn.Module):
+    '''
+    Apply given activation function Fn on var_id`th input variable(s).
+
+    Arg-s:
+        - var_id : index of input variable, can be an integer or a list
+                   of integers.
+
+    E.g.:
+        Fn = SelectiveActivation(var_id=2)
+        y1, y2, y3  = Fn(x1, x2, x3)
+    is equivalent to
+        y1, y2, y3 = x1, x2, ReLU(x3)
+    '''
+    def __init__(self, var_id=0, Fn=ReLU, Fn_kwargs={}):
+        super(SelectiveActivation, self).__init__()
+        self.Fn = Fn(**Fn_kwargs)
+        self.var_ids = var_id if type(var_id) == list else [var_id]
+
+    def forward(self, *vars_in):
+        vars_in = list(vars_in)
+        for var_id in self.var_ids:
+            vars_in[var_id] = self.Fn(vars_in[var_id])
+        return tuple(vars_in)
+
+
 def dims_to_dict(*mlp_dims):
     '''
     Converts/broadcasts MLP dimension arg-s `mlp_dims` (int, dict, OrderedDict)
@@ -221,7 +247,7 @@ class IndependentBlock(torch.nn.Module):
         '''
         Arg-s:
             - in_dims, out_dims : number of input and output dim-s. Either an
-              int (all MLPs will have same input/output dim-s) or a dict of
+              int (if all MLPs have same input/output dim-s) or a dict of
               integers w/ keys "node", "edge", etc..
               E.g. {'node':10,'edge':2, ...}
             - hidden_dims : a list of hidden dimensions {default : [] no hidden
@@ -256,6 +282,116 @@ class IndependentBlock(torch.nn.Module):
         for x, k in zip(xs, self.mlp_dict):
             ys.append(self.mlp_dict[k](x))
         return tuple(ys)
+
+
+class NodeUpdate(torch.nn.Module):
+    def __init__(self, f_node):
+        super(NodeUpdate, self).__init__()
+        self.f_node = f_node  # aggr+update nodes
+
+    def forward(self, x, edge_index, edge_attr):
+        # h_v = f_node(x, aggr(edge_attr|edge_index))
+        h_v = self.f_node(x, edge_index, edge_attr)
+        return h_v, edge_index, edge_attr
+
+
+class EdgeUpdate(torch.nn.Module):
+    def __init__(self, f_edge):
+        super(EdgeUpdate, self).__init__()
+        self.f_edge = f_edge  # aggr+update nodes
+
+    def forward(self, x, edge_index, edge_attr):
+        # h_e[k] = f_edge(x_s[k], x_t[k], e[k])
+        h_e = self.f_edge(x[edge_index[0]],
+                          x[edge_index[1]],
+                          edge_attr)
+        return x, edge_index, h_e
+
+
+class ParallelUpdate(torch.nn.Module):
+    def __init__(self, f_node, f_edge):
+        super(ParallelUpdate, self).__init__()
+        self.f_node = f_node  # aggr+update nodes
+        self.f_edge = f_edge  # message/update edges
+
+    def forward(self, x, edge_index, edge_attr):
+        # h_v = f_node(x, aggr(edge_attr|edge_index))
+        h_v = self.f_node(x, edge_index, edge_attr)
+
+        # h_e[k] = f_edge(x_s[k], x_t[k], e[k])
+        h_e = self.f_edge(x[edge_index[0]],
+                          x[edge_index[1]],
+                          edge_attr)
+        return h_v, edge_index, h_e
+
+
+class MessageBlock(torch.nn.Module):
+    '''
+    Vanilla message passing block that uses one aggregate, concatenation for node-to-edge or
+    one of aggregation schemes (`aggr`) for edge-to-node, and one update (MLP) function per
+    graph variable. The sequence of aggregate+update steps for variables {node, edge} can be
+    one of edge-then-node ("e"), node-then-edge ("n"), or  parallel/simulataneous
+    ("p") update given with an input argument `updt`.
+    '''
+    def __init__(self, in_dims, out_dims, hidden_dims=[],
+                 aggr='mean', updt='e', **mlp_kwargs):
+        '''
+        Arg-s:
+            - in_dims, out_dims : number of input and output dimensions. Either an
+                      int (if all MLPs have same input/output dim-s) or a dict of
+                      integers w/ keys "node" and "edge", e.g. {'node':10,'edge':2, ...}.
+            - hidden_dims : a list of hidden dimensions {default : [] no hidden
+                      layers}, or a dict of lists, e.g. {'node':[],'edge':[8,16], ...}.
+            - aggr : aggregation scheme, one of `['sum', 'mul', 'mean', 'min', 'max']`
+                    {default: 'mean'}.
+            - updt : update sequence, one of 'e' (edge-then-node), 'n' (node-then-edge),
+                    or 'p' (parallel or simulataneous update).
+            - mlp_kwargs : optional kwarg-s for MLPs.
+
+        Notes:
+            - Dimensions of inputs for actual node and edge MLPs depend on update
+              sequence `updt`.
+            - In order to have same output or hidden dimensions for all
+              MLPs use integers for `out_dims`, and a list for
+              `hidden_dims`, instead of dictionaries.
+        '''
+        super(MessageBlock, self).__init__()
+        assert updt in 'enp'
+
+        in_dims, out_dims, hidden_dims = dims_to_dict(in_dims, out_dims, hidden_dims)
+
+        if updt == 'e':
+            # update edge-then-node {default}
+            f_v_in = in_dims['node'] + out_dims['edge']
+            f_e_in = in_dims['edge'] + 2*in_dims['node']
+            seq = ['edge', 'node']  # update order
+        elif updt == 'n':
+            # update node-then-edge
+            f_v_in = in_dims['node'] + in_dims['edge']
+            f_e_in = in_dims['edge'] + 2*out_dims['node']
+            seq = ['node', 'edge']  # update order
+        elif updt == 'p':
+            # parallel update
+            f_v_in = in_dims['node'] + in_dims['edge']
+            f_e_in = in_dims['edge'] + 2*in_dims['node']
+
+        f_var = {'node': AggregateUpdate(f_v_in, out_dims['node'], hidden_dims=hidden_dims['node'],
+                                         aggr=aggr, **mlp_kwargs),
+                 'edge': Message(f_e_in, out_dims['edge'], hidden_dims=hidden_dims['edge'],
+                                 **mlp_kwargs)}
+
+        if updt == 'p':
+            self.layers = ParallelUpdate(f_var['node'], f_var['edge'])
+        else:
+            f_update = {'node': NodeUpdate, 'edge': EdgeUpdate}
+            self.layers = Sequential(*(f_update[k](f_var[k]) for k in seq))
+
+    def forward(self, x, edge_index, edge_attr):
+        '''
+        Returns: h_v, edge_index, h_e
+        '''
+        h_v, edge_index, h_e = self.layers(x, edge_index, edge_attr)
+        return h_v, edge_index, h_e
 
 
 class SingleMPStepSquared(torch.nn.Module):
