@@ -357,6 +357,28 @@ class MessageBlock(torch.nn.Module):
         return h_v, edge_index, h_e
 
 
+class ResidualMessageBlock(MessageBlock):
+    '''`MessageBlock` with residual (skip) connnection `output=x+MessageBlock(x)`'''
+    def __init__(self, in_dims, out_dims, hidden_dims=[],
+                 aggr='mean', updt='e', **mlp_kwargs):
+        super(ResidualMessageBlock, self).__init__(in_dims, out_dims,
+                                                   hidden_dims=hidden_dims,
+                                                   aggr=aggr, updt=updt,
+                                                   **mlp_kwargs)
+
+    def forward(self, x, edge_index, edge_attr):
+        '''
+        h_v, h_e = (x_v, x_e) + MessageBlock(x_v, x_e)
+
+        Returns:
+            h_v, edge_index, h_e
+        '''
+        h_v, edge_index, h_e = self.layers(x, edge_index, edge_attr)
+        h_v = h_v + x  # node features
+        h_e = h_e + edge_attr  # edge features
+        return h_v, edge_index, h_e
+
+
 class IndependentBlock(torch.nn.Module):
     '''
     Layer w/ independent MLPs that all use the same `mlp_kwargs`. The last
