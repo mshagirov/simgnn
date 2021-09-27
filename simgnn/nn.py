@@ -81,10 +81,10 @@ def dims_to_dict(*mlp_dims):
     def is_dict(d):
         return True if type(d) == dict or type(d) == OrderedDict else False
 
-    n_vars = max([(k, len(mlp_dim) if is_dict(mlp_dim) else 1)
+    n_vars = max([(k, len(mlp_dim) if is_dict(mlp_dim) else 0)
                   for k, mlp_dim in enumerate(mlp_dims)], key=lambda x: x[1])
 
-    var_names = ("node", "edge") if n_vars[1] == 1 \
+    var_names = ("node", "edge") if n_vars[1] == 0 \
         else tuple(mlp_dims[n_vars[0]].keys())
 
     mlp_dims_out = (
@@ -92,7 +92,9 @@ def dims_to_dict(*mlp_dims):
                     ((var_k, mlp_dim[var_k] if is_dict(mlp_dim) else mlp_dim)
                         for var_k in var_names)) for mlp_dim in mlp_dims
                     )
-    return tuple(mlp_dims_out)
+    mlp_dims_out = tuple(mlp_dims_out)
+    mlp_dims_out = mlp_dims_out if len(mlp_dims_out) > 1 else mlp_dims_out[0]
+    return mlp_dims_out
 
 
 class Message(torch.nn.Module):
