@@ -230,60 +230,6 @@ class DiffMessageSquared(torch.nn.Module):
         return self.mlp(torch.cat([tgt - src, (tgt - src)**2, edge_attr], dim=1))
 
 
-class IndependentBlock(torch.nn.Module):
-    '''
-    Layer w/ independent MLPs that all use the same `mlp_kwargs`. The last
-    layer of all MLPs are plain linear layers, i.e. they have no dropout/
-    activations.
-
-    Example:
-        # Inputs --> x: [#nodes, 10]; e: [#edges, 2], ...
-        # Enc : encodes node and edge features to 32-dim vectors (MLPs w/ one
-        16-dim hidden layer)
-        Enc = IndependentBlock({'node':10,'edge':2}, 32, hidden_dims=[16])
-        x_enc, e_enc, ... = Enc(x, e, ...);
-    '''
-    def __init__(self, in_dims, out_dims, hidden_dims=[], **mlp_kwargs):
-        '''
-        Arg-s:
-            - in_dims, out_dims : number of input and output dim-s. Either an
-              int (if all MLPs have same input/output dim-s) or a dict of
-              integers w/ keys "node", "edge", etc..
-              E.g. {'node':10,'edge':2, ...}
-            - hidden_dims : a list of hidden dimensions {default : [] no hidden
-            layers}, or a dict of lists. E.g. {'node':[],'edge':[8,16], ...}
-            - mlp_kwargs : kwarg-s for MLPs.
-
-        Notes:
-            - In order to have same input, output or hidden dimensions for all
-              MLPs use integers for `in_dims`, `out_dims`, and a list for
-              `hidden_dims`, instead of dictionaries.
-            - Order of the dict keys is used for an input order for the forward
-              function. If more than one of the input arguments ( in_dims,
-              out_dims, hidden_dims) are dict, it is assumed that they all have
-              the same keys and ordering for keys. Default order for dict keys,
-              when using an `int` for `in_dims`, `out_dims`, and a `list` for
-              `hidden_dims` is ['node', 'edge'] (MLPs have same dimensions).
-              For python versions <3.7 use int or `OrderedDict` for consistent
-              order of the dictionary keys. For further details see doc and
-              code for `simgnn.nn.dims_to_dict`.
-        '''
-        super(IndependentBlock, self).__init__()
-
-        in_dims, out_dims, hidden_dims = dims_to_dict(in_dims, out_dims,
-                                                      hidden_dims)
-
-        self.mlp_dict = ModuleDict({k: mlp(in_dims[k], out_dims[k],
-                                           hidden_dims=hidden_dims[k],
-                                           **mlp_kwargs) for k in in_dims})
-
-    def forward(self, *xs):
-        ys = []
-        for x, k in zip(xs, self.mlp_dict):
-            ys.append(self.mlp_dict[k](x))
-        return tuple(ys)
-
-
 class NodeUpdate(torch.nn.Module):
     def __init__(self, f_node):
         super(NodeUpdate, self).__init__()
@@ -339,11 +285,16 @@ class ParallelUpdate(torch.nn.Module):
 
 class MessageBlock(torch.nn.Module):
     '''
-    Vanilla message passing block that uses one aggregate (concatenation for node-to-edge or
-    one of aggregation schemes `aggr` for edge-to-node,) and one update (MLP) function per
+    Vanilla message passing block with one aggregation and one update function per
     graph variable. The sequence of aggregate+update steps for variables {node, edge} can be
-    one of edge-then-node ("e"), node-then-edge ("n"), or  parallel/simulataneous
-    ("p") update given with an input argument `updt`.
+    one of {"e": edge-then-node, "n": node-then-edge, or "p": parallel/simulataneous}
+    update schemes given by `updt` argument.
+
+    Notes:
+        - Aggregation of nodes to edges is fixed to concatenation operation, whereas
+        aggregation of edges to nodes can be one of the schemes set by an input argument `aggr`.
+        - Update function can be a linear layer or a MLP. For all cases, the last layer is always
+        linear.
     '''
     def __init__(self, in_dims, out_dims, hidden_dims=[],
                  aggr='mean', updt='e', **mlp_kwargs):
@@ -354,7 +305,7 @@ class MessageBlock(torch.nn.Module):
                       integers w/ keys "node" and "edge", e.g. {'node':10,'edge':2, ...}.
             - hidden_dims : a list of hidden dimensions {default : [] no hidden
                       layers}, or a dict of lists, e.g. {'node':[],'edge':[8,16], ...}.
-            - aggr : aggregation scheme, one of `['sum', 'mul', 'mean', 'min', 'max']`
+            - aggr : message aggregation scheme, one of `['sum', 'mul', 'mean', 'min', 'max']`
                     {default: 'mean'}.
             - updt : update sequence, one of 'e' (edge-then-node), 'n' (node-then-edge),
                     or 'p' (parallel or simulataneous update).
@@ -404,6 +355,60 @@ class MessageBlock(torch.nn.Module):
         '''
         h_v, edge_index, h_e = self.layers(x, edge_index, edge_attr)
         return h_v, edge_index, h_e
+
+
+class IndependentBlock(torch.nn.Module):
+    '''
+    Layer w/ independent MLPs that all use the same `mlp_kwargs`. The last
+    layer of all MLPs are plain linear layers, i.e. they have no dropout/
+    activations.
+
+    Example:
+        # Inputs --> x: [#nodes, 10]; e: [#edges, 2], ...
+        # Enc : encodes node and edge features to 32-dim vectors (MLPs w/ one
+        16-dim hidden layer)
+        Enc = IndependentBlock({'node':10,'edge':2}, 32, hidden_dims=[16])
+        x_enc, e_enc, ... = Enc(x, e, ...);
+    '''
+    def __init__(self, in_dims, out_dims, hidden_dims=[], **mlp_kwargs):
+        '''
+        Arg-s:
+            - in_dims, out_dims : number of input and output dim-s. Either an
+              int (if all MLPs have same input/output dim-s) or a dict of
+              integers w/ keys "node", "edge", etc..
+              E.g. {'node':10,'edge':2, ...}
+            - hidden_dims : a list of hidden dimensions {default : [] no hidden
+            layers}, or a dict of lists. E.g. {'node':[],'edge':[8,16], ...}
+            - mlp_kwargs : kwarg-s for MLPs.
+
+        Notes:
+            - In order to have same input, output or hidden dimensions for all
+              MLPs use integers for `in_dims`, `out_dims`, and a list for
+              `hidden_dims`, instead of dictionaries.
+            - Order of the dict keys is used for an input order for the forward
+              function. If more than one of the input arguments ( in_dims,
+              out_dims, hidden_dims) are dict, it is assumed that they all have
+              the same keys and ordering for keys. Default order for dict keys,
+              when using an `int` for `in_dims`, `out_dims`, and a `list` for
+              `hidden_dims` is ['node', 'edge'] (MLPs have same dimensions).
+              For python versions <3.7 use int or `OrderedDict` for consistent
+              order of the dictionary keys. For further details see doc and
+              code for `simgnn.nn.dims_to_dict`.
+        '''
+        super(IndependentBlock, self).__init__()
+
+        in_dims, out_dims, hidden_dims = dims_to_dict(in_dims, out_dims,
+                                                      hidden_dims)
+
+        self.mlp_dict = ModuleDict({k: mlp(in_dims[k], out_dims[k],
+                                           hidden_dims=hidden_dims[k],
+                                           **mlp_kwargs) for k in in_dims})
+
+    def forward(self, *xs):
+        ys = []
+        for x, k in zip(xs, self.mlp_dict):
+            ys.append(self.mlp_dict[k](x))
+        return tuple(ys)
 
 
 class SingleMPStepSquared(torch.nn.Module):
