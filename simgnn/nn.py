@@ -151,8 +151,8 @@ class DiffMessage(torch.nn.Module):
 
 class AggregateUpdate(torch.nn.Module):
     '''
-    Aggregates edge features (`edge_attr`) from neighbouring nodes and updates node
-    features.
+    Aggregates edge features (`edge_attr`) from neighbouring nodes and updates
+    node features.
     '''
     def __init__(self, in_features, out_features, aggr='mean', **mlp_kwargs):
         '''
@@ -216,17 +216,20 @@ class DiffMessageSquared(torch.nn.Module):
     def __init__(self, in_features, out_features, **mlp_kwargs):
         '''
         MLP Arg-s:
-        - in_features : input dim-s == 2*`#src_features` + `#edge_features`. Assumes `#tgt_features`==`#src_features`.
+        - in_features : input dim-s == 2*`#src_features` + `#edge_features`.
+                        Assumes `#tgt_features`==`#src_features`.
         - out_features: output dim-s, e.g. `#edge_features`.
 
-        Optional kwargs for `mlp`: hidden_dims =[], dropout_p = 0, Fn = ReLU, Fn_kwargs = {}.
+        Optional kwargs for `mlp`:
+                hidden_dims =[], dropout_p = 0, Fn = ReLU, Fn_kwargs = {}.
         '''
         super(DiffMessageSquared, self).__init__()
         self.mlp = mlp(in_features, out_features, **mlp_kwargs)
 
     def forward(self, src, tgt, edge_attr):
         '''
-        - src, tgt : source and target features w/ shapes (#edges, #src_features) and (#edges, #tgt_features)
+        - src, tgt : source and target features w/ shapes (#edges, #src_features)
+                     and (#edges, #tgt_features)
         - edge_attr : edge features w/ shape (#edges, #edge_features)
         '''
         return self.mlp(torch.cat([tgt - src, (tgt - src)**2, edge_attr], dim=1))
@@ -288,54 +291,55 @@ class ParallelUpdate(torch.nn.Module):
 class MessageBlock(torch.nn.Module):
     '''
     Vanilla message passing block with one aggregation and one update function per
-    graph variable. The sequence of aggregate+update steps for variables {node, edge} can be
-    one of {"e": edge-then-node, "n": node-then-edge, or "p": parallel/simulataneous}
-    update schemes given by `updt` argument.
+    graph variable. The sequence of aggregate+update steps for variables {node,
+    edge} can be one of {"e": edge-then-node, "n": node-then-edge, or
+    "p": parallel/simulataneous} update schemes given by `seq` argument.
 
     Notes:
         - Aggregation of nodes to edges is fixed to concatenation operation, whereas
-        aggregation of edges to nodes can be one of the schemes set by an input argument `aggr`.
-        - Update function can be a linear layer or a MLP. For all cases, the last layer is always
-        linear.
+        aggregation of edges to nodes can be one of the schemes set by an input
+        argument `aggr`.
+        - Update function can be a linear layer or a MLP. For all cases, the last
+        layer is always linear.
     '''
     def __init__(self, in_dims, out_dims, hidden_dims=[],
-                 aggr='mean', updt='e', **mlp_kwargs):
+                 aggr='mean', seq='e', **mlp_kwargs):
         '''
         Arg-s:
             - in_dims, out_dims : number of input and output dimensions. Either an
                       int (if all MLPs have same input/output dim-s) or a dict of
-                      integers w/ keys "node" and "edge", e.g. {'node':10,'edge':2, ...}.
+                      integers w/ keys "node" and "edge",e.g.{'node':10,'edge':2,...}.
             - hidden_dims : a list of hidden dimensions {default : [] no hidden
-                      layers}, or a dict of lists, e.g. {'node':[],'edge':[8,16], ...}.
-            - aggr : message aggregation scheme, one of `['sum', 'mul', 'mean', 'min', 'max']`
-                    {default: 'mean'}.
-            - updt : update sequence, one of 'e' (edge-then-node), 'n' (node-then-edge),
+                      layers}, or a dict of lists,e.g.{'node':[],'edge':[8,16],...}.
+            - aggr : message aggregation scheme, one of `['sum', 'mul', 'mean',
+                     'min', 'max']` {default: 'mean'}.
+            - seq : update sequence, one of 'e' (edge-then-node), 'n' (node-then-edge),
                     or 'p' (parallel or simulataneous update).
             - mlp_kwargs : optional kwarg-s for MLPs.
 
         Notes:
             - Dimensions of inputs for actual node and edge MLPs depend on update
-              sequence `updt`.
-            - In order to have same output or hidden dimensions for all
-              MLPs use integers for `out_dims`, and a list for
-              `hidden_dims`, instead of dictionaries.
+              sequence `seq`.
+            - In order to have same output or hidden dimensions for all MLPs use
+              integers for `out_dims`, and a list for `hidden_dims`, instead of
+              dictionaries.
         '''
         super(MessageBlock, self).__init__()
-        assert updt in 'enp'
+        assert seq in 'enp'
 
         in_dims, out_dims, hidden_dims = dims_to_dict(in_dims, out_dims, hidden_dims)
 
-        if updt == 'e':
+        if seq == 'e':
             # update edge-then-node {default}
             f_v_in = in_dims['node'] + out_dims['edge']
             f_e_in = in_dims['edge'] + 2*in_dims['node']
             seq = ['edge', 'node']  # update order
-        elif updt == 'n':
+        elif seq == 'n':
             # update node-then-edge
             f_v_in = in_dims['node'] + in_dims['edge']
             f_e_in = in_dims['edge'] + 2*out_dims['node']
             seq = ['node', 'edge']  # update order
-        elif updt == 'p':
+        elif seq == 'p':
             # parallel update
             f_v_in = in_dims['node'] + in_dims['edge']
             f_e_in = in_dims['edge'] + 2*in_dims['node']
@@ -345,7 +349,7 @@ class MessageBlock(torch.nn.Module):
                  'edge': Message(f_e_in, out_dims['edge'], hidden_dims=hidden_dims['edge'],
                                  **mlp_kwargs)}
 
-        if updt == 'p':
+        if seq == 'p':
             self.layers = ParallelUpdate(f_var['node'], f_var['edge'])
         else:
             f_update = {'node': NodeUpdate, 'edge': EdgeUpdate}
@@ -359,26 +363,26 @@ class MessageBlock(torch.nn.Module):
         return h_v, edge_index, h_e
 
 
-class ResidualMessageBlock(MessageBlock):
-    '''`MessageBlock` with residual (skip) connnection `output=x+MessageBlock(x)`'''
-    def __init__(self, in_dims, out_dims, hidden_dims=[],
-                 aggr='mean', updt='e', **mlp_kwargs):
-        super(ResidualMessageBlock, self).__init__(in_dims, out_dims,
-                                                   hidden_dims=hidden_dims,
-                                                   aggr=aggr, updt=updt,
-                                                   **mlp_kwargs)
-
-    def forward(self, x, edge_index, edge_attr):
-        '''
-        h_v, h_e = (x_v, x_e) + MessageBlock(x_v, x_e)
-
-        Returns:
-            h_v, edge_index, h_e
-        '''
-        h_v, edge_index, h_e = self.layers(x, edge_index, edge_attr)
-        h_v = h_v + x  # node features
-        h_e = h_e + edge_attr  # edge features
-        return h_v, edge_index, h_e
+# class ResidualMessageBlock(MessageBlock):
+#     '''`MessageBlock` with residual (skip) connnection `output=x+MessageBlock(x)`'''
+#     def __init__(self, in_dims, out_dims, hidden_dims=[],
+#                  aggr='mean', seq='e', **mlp_kwargs):
+#         super(ResidualMessageBlock, self).__init__(in_dims, out_dims,
+#                                                    hidden_dims=hidden_dims,
+#                                                    aggr=aggr, seq=seq,
+#                                                    **mlp_kwargs)
+#
+#     def forward(self, x, edge_index, edge_attr):
+#         '''
+#         h_v, h_e = (x_v, x_e) + MessageBlock(x_v, x_e)
+#
+#         Returns:
+#             h_v, edge_index, h_e
+#         '''
+#         h_v, edge_index, h_e = self.layers(x, edge_index, edge_attr)
+#         h_v = h_v + x  # node features
+#         h_e = h_e + edge_attr  # edge features
+#         return h_v, edge_index, h_e
 
 
 class IndependentBlock(torch.nn.Module):
