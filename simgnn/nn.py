@@ -157,6 +157,10 @@ class DiffMessage(torch.nn.Module):
     `mlp([ x_tgt - x_src, edge_attr])--> new edge_attr`.
 
     Uses differences in x_tgt - x_src rather than concatenating them.
+
+    Notes:
+        - `DiffMessage` is a redundant class. All of its functionality can be
+          reproduced using `Message` class.
     '''
     def __init__(self, in_features, out_features, **mlp_kwargs):
         '''
