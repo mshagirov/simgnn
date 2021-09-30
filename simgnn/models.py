@@ -1,6 +1,6 @@
 import torch
-from torch.nn import ReLU, ModuleDict, ModuleList
-from simgnn.nn import mlp, SelectiveActivation, IndependentBlock, MessageBlock, Encode_Process_Decode
+from torch.nn import ReLU, ModuleList
+from simgnn.nn import mlp, SelectiveActivation, IndependentBlock, MessageBlock  # , Encode_Process_Decode
 from simgnn.nn import DiffMessage, DiffMessageSquared, AggregateUpdate
 
 
@@ -59,7 +59,7 @@ class GraphEncoder(torch.nn.Module):
 
 class GraphDecoder(torch.nn.Module):
     '''
-    Graph decoder block for independently processing node and edge variables into velocities and
+    Graph decoder model for independently processing node and edge variables into velocities and
     tensions.
 
     `GraphDecoder.forward`:
@@ -89,6 +89,71 @@ class GraphDecoder(torch.nn.Module):
         edge_attr = edge_attr[:edge_attr.size(0)//2, :] + edge_attr[(edge_attr.size(0)//2):, :]
         y, _, e_out = self.independent(x, edge_index, edge_attr)
         return y, e_out.reshape((e_out.size(0),)), None
+
+
+class GraphProcessor(torch.nn.Module):
+    '''
+    Graph processor model.
+
+    Processes input graph var-s with graph neural network blocks. Blocks repeat
+    `n_blocks` times, and each block is followed by same activation function `Fn`
+    (default: ReLU). Optionally, can switch between independent and message passing
+    layers by setting `block_type` (for all layers), and can disable/enable
+    residual or skip connections `x_new = x_old + Fn(layer(x_old))` by setting
+    `isresidual`.
+    '''
+    def __init__(self, in_dims, out_dims, hidden_dims=[],
+                 aggr='mean', seq='e', block_type='message',
+                 n_blocks=5, isresidual=True, **mlp_kwargs):
+        '''
+        Arg-s:
+             - in_dims, out_dims,
+               hidden_dims, aggr, seq : agr-s for MessageBlock/IndependentBlock
+                                                 (`aggr` and `seq` ignored for
+                                                 IndependentBlock)
+            - block_type : processor layer types, one of ['message', 'independent']
+            - n_blocks   : number of repeating blocks.
+            - isresidual : enable/disable residual connections (bool).
+        '''
+        super(GraphProcessor, self).__init__()
+
+        self.aggr, self.seq = aggr, seq
+        self.in_dims, self.out_dims = in_dims, out_dims
+        self.hidden_dims, self.mlp_kwargs = hidden_dims, mlp_kwargs
+
+        Fn_kwargs = mlp_kwargs['Fn_kwargs'] if 'Fn_kwargs' in mlp_kwargs else {}
+        Fn = mlp_kwargs['Fn'] if 'Fn' in mlp_kwargs else ReLU
+
+        gnn_block = self.get_message if block_type == 'message' else self.get_independent
+
+        self.layers = ModuleList([gnn_block() for k in range(n_blocks)])
+
+        self.Fn = SelectiveActivation(var_id=[0, 2], Fn=Fn, Fn_kwargs=Fn_kwargs)
+
+        self.forward_fn = self.res_fwd if isresidual else self.non_res_fwd
+
+    def get_independent(self):
+        return IndependentBlock(self.in_dims, self.out_dims, hidden_dims=self.hidden_dims,
+                                fwd_mode='update', **self.mlp_kwargs)
+
+    def get_message(self):
+        return MessageBlock(self.in_dims, self.out_dims, hidden_dims=self.hidden_dims,
+                            aggr=self.aggr, seq=self.seq, **self.mlp_kwargs)
+
+    def res_fwd(self, x, edge_index, edge_attr):
+        for layer in self.layers:
+            hx, _, he = self.Fn(*layer(x, edge_index, edge_attr))
+            x = x + hx
+            edge_attr = edge_attr + he
+        return x, edge_index, edge_attr
+
+    def non_res_fwd(self, x, edge_index, edge_attr):
+        for layer in self.layers:
+            x, _, edge_attr = self.Fn(*layer(x, edge_index, edge_attr))
+        return x, edge_index, edge_attr
+
+    def forward(self, *xs):
+        return self.forward_fn(*xs)
 
 
 class SingleMPStepSquared(torch.nn.Module):
