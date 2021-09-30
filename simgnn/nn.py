@@ -74,9 +74,15 @@ def dims_to_dict(*mlp_dims):
     Keys of the dict/OrderedDict input arg-s in `mlp_dims` are used if any of
     the input arg-s is a dict or OrderedDict, or default ("node", "edge") keys
     are used otherwise. Input arg-s must have the same keys (and same ordering)
-    if more than one of the `mlp_dims` are dict/OrderedDict's. For python
-    versions earlier than v3.7 use OrderedDict in order to retain order
-    of the dictionary keys.
+    if more than one of the `mlp_dims` are dict/OrderedDict's.
+
+    For python versions before v3.7 use OrderedDict in order to maintain correct
+    order of the dictionary keys.
+
+    Examples:
+        c_i, c_o, c_h, ... = dims_to_dict(10, 128, 64, ...)
+        # use dict/OrderedDict inputs to specify var dim-s:
+        c_i, c_o, c_h = dims_to_dict(8, 16, {'a':10,'b':2, 'c': 3})
     '''
     def is_dict(d):
         return True if type(d) == dict or type(d) == OrderedDict else False
