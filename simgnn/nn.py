@@ -4,6 +4,42 @@ from torch_scatter import scatter
 from collections import OrderedDict
 
 
+def dims_to_dict(*mlp_dims):
+    '''
+    Converts/broadcasts MLP dimension arg-s `mlp_dims` (int, dict, OrderedDict)
+    to a set of OrderedDict's with same keys (keys represent graph variables).
+    Keys of the dict/OrderedDict input arg-s in `mlp_dims` are used if any of
+    the input arg-s is a dict or OrderedDict, or default ("node", "edge") keys
+    are used otherwise. Input arg-s must have the same keys (and same ordering)
+    if more than one of the `mlp_dims` are dict/OrderedDict's.
+
+    For python versions before v3.7 use OrderedDict in order to maintain correct
+    order of the dictionary keys.
+
+    Examples:
+        c_i, c_o, c_h, ... = dims_to_dict(10, 128, 64, ...)
+        # use dict/OrderedDict inputs to specify var dim-s:
+        c_i, c_o, c_h = dims_to_dict(8, 16, {'a':10,'b':2, 'c': 3})
+    '''
+    def is_dict(d):
+        return True if type(d) == dict or type(d) == OrderedDict else False
+
+    n_vars = max([(k, len(mlp_dim) if is_dict(mlp_dim) else 0)
+                  for k, mlp_dim in enumerate(mlp_dims)], key=lambda x: x[1])
+
+    var_names = ("node", "edge") if n_vars[1] == 0 \
+        else tuple(mlp_dims[n_vars[0]].keys())
+
+    mlp_dims_out = (
+        OrderedDict(
+                    ((var_k, mlp_dim[var_k] if is_dict(mlp_dim) else mlp_dim)
+                        for var_k in var_names)) for mlp_dim in mlp_dims
+                    )
+    mlp_dims_out = tuple(mlp_dims_out)
+    mlp_dims_out = mlp_dims_out if len(mlp_dims_out) > 1 else mlp_dims_out[0]
+    return mlp_dims_out
+
+
 class Encode_Process_Decode(torch.nn.Module):
     '''
     Encode-Process-Decode framework from "Learning to Simulate Complex Physics with Graph Networks" by
@@ -29,6 +65,34 @@ class Encode_Process_Decode(torch.nn.Module):
 
     def forward(self, *X):
         return self.decoder(*self.processor(*self.encoder(*X)))
+
+
+class SelectiveActivation(torch.nn.Module):
+    '''
+    Apply given activation function Fn on var_id`th input variable(s).
+
+    Arg-s:
+        - var_id : index of input variable, can be an integer or a list
+                   of integers.
+        - Fn : activation function.
+        - Fn_kwargs : dict of keyword arg-s for construcing `Fn`.
+
+    E.g.:
+        Fn = SelectiveActivation(var_id=2)
+        y1, y2, y3  = Fn(x1, x2, x3)
+    is equivalent to
+        y1, y2, y3 = x1, x2, ReLU(x3)
+    '''
+    def __init__(self, var_id=0, Fn=ReLU, Fn_kwargs={}):
+        super(SelectiveActivation, self).__init__()
+        self.Fn = Fn(**Fn_kwargs)
+        self.var_ids = var_id if type(var_id) == list else [var_id]
+
+    def forward(self, *vars_in):
+        vars_in = list(vars_in)
+        for var_id in self.var_ids:
+            vars_in[var_id] = self.Fn(vars_in[var_id])
+        return tuple(vars_in)
 
 
 class mlp(torch.nn.Module):
@@ -64,70 +128,6 @@ class mlp(torch.nn.Module):
 
     def forward(self, x):
         return self.layers(x)
-
-
-class SelectiveActivation(torch.nn.Module):
-    '''
-    Apply given activation function Fn on var_id`th input variable(s).
-
-    Arg-s:
-        - var_id : index of input variable, can be an integer or a list
-                   of integers.
-        - Fn : activation function.
-        - Fn_kwargs : dict of keyword arg-s for construcing `Fn`.
-
-    E.g.:
-        Fn = SelectiveActivation(var_id=2)
-        y1, y2, y3  = Fn(x1, x2, x3)
-    is equivalent to
-        y1, y2, y3 = x1, x2, ReLU(x3)
-    '''
-    def __init__(self, var_id=0, Fn=ReLU, Fn_kwargs={}):
-        super(SelectiveActivation, self).__init__()
-        self.Fn = Fn(**Fn_kwargs)
-        self.var_ids = var_id if type(var_id) == list else [var_id]
-
-    def forward(self, *vars_in):
-        vars_in = list(vars_in)
-        for var_id in self.var_ids:
-            vars_in[var_id] = self.Fn(vars_in[var_id])
-        return tuple(vars_in)
-
-
-def dims_to_dict(*mlp_dims):
-    '''
-    Converts/broadcasts MLP dimension arg-s `mlp_dims` (int, dict, OrderedDict)
-    to a set of OrderedDict's with same keys (keys represent graph variables).
-    Keys of the dict/OrderedDict input arg-s in `mlp_dims` are used if any of
-    the input arg-s is a dict or OrderedDict, or default ("node", "edge") keys
-    are used otherwise. Input arg-s must have the same keys (and same ordering)
-    if more than one of the `mlp_dims` are dict/OrderedDict's.
-
-    For python versions before v3.7 use OrderedDict in order to maintain correct
-    order of the dictionary keys.
-
-    Examples:
-        c_i, c_o, c_h, ... = dims_to_dict(10, 128, 64, ...)
-        # use dict/OrderedDict inputs to specify var dim-s:
-        c_i, c_o, c_h = dims_to_dict(8, 16, {'a':10,'b':2, 'c': 3})
-    '''
-    def is_dict(d):
-        return True if type(d) == dict or type(d) == OrderedDict else False
-
-    n_vars = max([(k, len(mlp_dim) if is_dict(mlp_dim) else 0)
-                  for k, mlp_dim in enumerate(mlp_dims)], key=lambda x: x[1])
-
-    var_names = ("node", "edge") if n_vars[1] == 0 \
-        else tuple(mlp_dims[n_vars[0]].keys())
-
-    mlp_dims_out = (
-        OrderedDict(
-                    ((var_k, mlp_dim[var_k] if is_dict(mlp_dim) else mlp_dim)
-                        for var_k in var_names)) for mlp_dim in mlp_dims
-                    )
-    mlp_dims_out = tuple(mlp_dims_out)
-    mlp_dims_out = mlp_dims_out if len(mlp_dims_out) > 1 else mlp_dims_out[0]
-    return mlp_dims_out
 
 
 class Message(torch.nn.Module):
