@@ -11,7 +11,9 @@ class Encode_Process_Decode(torch.nn.Module):
     '''
     def __init__(self, encoder, processor, decoder):
         '''
-        Arg-s: torch.nn.Module modules
+        Arg-s:
+            encoder, processor, decoder : torch.nn.Module objects
+
             - encoder : accepts variable number of arg-s equal to the num. of arg-s for the forward
                         function of `Encode_Process_Decode`
             - processor : outputs from the `encoder` are fed to the processor.
