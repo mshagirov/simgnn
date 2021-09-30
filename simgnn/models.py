@@ -101,6 +101,14 @@ class GraphProcessor(torch.nn.Module):
     layers by setting `block_type` (for all layers), and can disable/enable
     residual or skip connections `x_new = x_old + Fn(layer(x_old))` by setting
     `isresidual`.
+
+    `GraphProcessor.forward`:
+    -----
+    Input arg-s:
+         - x, edge_index, edge_attr : graph var-s
+
+    Returns:
+        - x, edge_index, edge_attr : processed graph var-s
     '''
     def __init__(self, in_dims, out_dims, hidden_dims=[],
                  aggr='mean', seq='e', block_type='message',
@@ -143,8 +151,8 @@ class GraphProcessor(torch.nn.Module):
     def res_fwd(self, x, edge_index, edge_attr):
         for layer in self.layers:
             hx, _, he = self.Fn(*layer(x, edge_index, edge_attr))
-            x = x + hx
-            edge_attr = edge_attr + he
+            x = (x + hx)/2
+            edge_attr = (edge_attr + he)/2
         return x, edge_index, edge_attr
 
     def non_res_fwd(self, x, edge_index, edge_attr):
