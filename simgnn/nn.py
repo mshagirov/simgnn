@@ -483,6 +483,93 @@ class IndependentBlock(torch.nn.Module):
         return self.forward_fn(*xs)
 
 
+class GraphEncoder(torch.nn.Module):
+    '''
+    Graph encoder model for encoding pt-geometric graph data. Before passing the
+    input graph to MLPs, copy of reversed edges (e_ji) is concatenated to the graph
+    since datasets in `simgnn.datasets` contain only one copy (e_ij).
+
+    new_edge_index = concatenate(e_ij, e_ji)
+    new_edge_attr = concatenate(edge_attr, -edge_attr)  # this passed to MLP
+
+    `GraphEncoder.forward`:
+    -----
+    Input arg-s:
+        - data : pt-geometric graph w/ properties `x`, `edge_attr` and `edge_index`.
+
+    Returns:
+        - h_x, edge_index, h_e: processed node, edge variables and concatenated
+                                `edge_index`.
+    '''
+    def __init__(self, in_dims, out_dims, hidden_dims=[], **mlp_kwargs):
+        '''
+        Same input arg-s as the `IndependentBlock` with mode set to `fwd_mode='update'`.
+
+        Uses ReLU as a default activation, to set a different activation function pass keyword arg-s:
+            - Fn : default torch.nn.ReLU
+            - Fn_kwargs : `dict` of keyword arg-s for constructing `Fn`, default {}.
+        Note that same `Fn` is used for both hidden layers of `IndependentBlock` MLPs, and
+        for the last layer of `GraphEncoder`.
+
+        Example:
+            enc = GraphEncoder(10, 256, Fn=torch.nn.LeakyReLU, Fn_kwargs={'negative_slope':0.2})
+            hx, edge_index, he = enc(data)
+        '''
+        super(GraphEncoder, self).__init__()
+        Fn_kwargs = mlp_kwargs['Fn_kwargs'] if 'Fn_kwargs' in mlp_kwargs else {}
+        Fn = mlp_kwargs['Fn'] if 'Fn' in mlp_kwargs else ReLU
+
+        self.independent = IndependentBlock(in_dims, out_dims,
+                                            hidden_dims=hidden_dims,
+                                            fwd_mode='update', **mlp_kwargs)
+        # apply activation function on 1st and 3rd input var-s
+        self.Fn = SelectiveActivation(var_id=[0, 2], Fn=Fn, Fn_kwargs=Fn_kwargs)
+
+    def forward(self, data):
+        # convert to undirected graph : cat([e_ij, e_ji])
+        edge_index = torch.cat([data.edge_index,
+                                torch.stack([data.edge_index[1], data.edge_index[0]], dim=0)],
+                               dim=1).contiguous()
+        # edge features for undirected graph : e_ij = - e_ji
+        edge_attr = torch.cat([data.edge_attr, -data.edge_attr], dim=0).contiguous()
+
+        return self.Fn(*self.independent(data.x, edge_index, edge_attr))
+
+
+class GraphDecoder(torch.nn.Module):
+    '''
+    Graph decoder block for independently processing node and edge variables into velocities and
+    tensions.
+
+    `GraphDecoder.forward`:
+    -----
+    Input arg-s:
+        -  x, edge_index, edge_attr : `x` and `edge_attr` are processed using independent MLPs.
+                                      `edge_index` is ignored. Before passing it to its MLP,
+                                      two halves of `edge_attr` along `axis=0` are summed to pool
+                                      edges with opposite directions (new_e = e_ij + e_ji), this
+                                      assumes that edges with opposite directions are concatenated
+                                      as (i.e. `edge_attr = [e_ij, e_ij]`, same applies to the
+                                      `edge_index`, e.g. in the previous message passing layers).
+
+    Returns:
+        - y_pred: is a node-wise output (e.g. node velocity).
+        - tension : edge tensions (for undirected edges).
+        - `None` is a place holder to make model compatible with training function in `train.py`.
+    '''
+    def __init__(self, in_dims, out_dims, hidden_dims=[], **mlp_kwargs):
+        super(GraphDecoder, self).__init__()
+
+        self.independent = IndependentBlock(in_dims, out_dims,
+                                            hidden_dims=hidden_dims,
+                                            fwd_mode='update', **mlp_kwargs)
+
+    def forward(self, x, edge_index, edge_attr):
+        edge_attr = edge_attr[:edge_attr.size(0)//2, :] + edge_attr[(edge_attr.size(0)//2):, :]
+        y, _, e_out = self.independent(x, edge_index, edge_attr)
+        return y, e_out.reshape((e_out.size(0),)), None
+
+
 class SingleMPStepSquared(torch.nn.Module):
     def __init__(self, node_in_features=10, node_out_features=2, edge_in_features=2,
                  message_out_features=5, message_hidden_dims=[10], update_hidden_dims=[],
