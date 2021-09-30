@@ -7,9 +7,7 @@ from collections import OrderedDict
 class mlp(torch.nn.Module):
     '''
     MLP consisting of multiple linear layers w/ activation func-s (`Fn`). Last
-    layer is always linear layer w/o activation.
-
-    The last layer is a linear layer, i.e. it has no dropout/activation.
+    layer is always linear layer w/o activation or dropout.
     '''
 
     def __init__(self, in_features, out_features, hidden_dims=[], dropout_p=0,
@@ -48,6 +46,8 @@ class SelectiveActivation(torch.nn.Module):
     Arg-s:
         - var_id : index of input variable, can be an integer or a list
                    of integers.
+        - Fn : activation function.
+        - Fn_kwargs : dict of keyword arg-s for construcing `Fn`.
 
     E.g.:
         Fn = SelectiveActivation(var_id=2)
@@ -361,28 +361,6 @@ class MessageBlock(torch.nn.Module):
         '''
         h_v, edge_index, h_e = self.layers(x, edge_index, edge_attr)
         return h_v, edge_index, h_e
-
-
-# class ResidualMessageBlock(MessageBlock):
-#     '''`MessageBlock` with residual (skip) connnection `output=x+MessageBlock(x)`'''
-#     def __init__(self, in_dims, out_dims, hidden_dims=[],
-#                  aggr='mean', seq='e', **mlp_kwargs):
-#         super(ResidualMessageBlock, self).__init__(in_dims, out_dims,
-#                                                    hidden_dims=hidden_dims,
-#                                                    aggr=aggr, seq=seq,
-#                                                    **mlp_kwargs)
-#
-#     def forward(self, x, edge_index, edge_attr):
-#         '''
-#         h_v, h_e = (x_v, x_e) + MessageBlock(x_v, x_e)
-#
-#         Returns:
-#             h_v, edge_index, h_e
-#         '''
-#         h_v, edge_index, h_e = self.layers(x, edge_index, edge_attr)
-#         h_v = h_v + x  # node features
-#         h_e = h_e + edge_attr  # edge features
-#         return h_v, edge_index, h_e
 
 
 class IndependentBlock(torch.nn.Module):
