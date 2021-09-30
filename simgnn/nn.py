@@ -4,6 +4,31 @@ from torch_scatter import scatter
 from collections import OrderedDict
 
 
+class Encode_Process_Decode(torch.nn.Module):
+    '''
+    Encode-Process-Decode framework from "Learning to Simulate Complex Physics with Graph Networks" by
+    A. Sanchez-Gonzalez et al. (2020)
+    '''
+    def __init__(self, encoder, processor, decoder):
+        '''
+        Arg-s: torch.nn.Module modules
+            - encoder : accepts variable number of arg-s equal to the num. of arg-s for the forward
+                        function of `Encode_Process_Decode`
+            - processor : outputs from the `encoder` are fed to the processor.
+            - decoder : accepts outputs from the `processor`.
+
+        Returns `output` from:
+            output = decoder(*processor(*encoder(*X)))
+        '''
+        super(Encode_Process_Decode, self).__init__()
+        self.encoder = encoder
+        self.processor = processor
+        self.decoder = decoder
+
+    def forward(self, *X):
+        return self.decoder(*self.processor(*self.encoder(*X)))
+
+
 class mlp(torch.nn.Module):
     '''
     MLP consisting of multiple linear layers w/ activation func-s (`Fn`). Last
