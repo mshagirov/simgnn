@@ -391,27 +391,39 @@ class IndependentBlock(torch.nn.Module):
     layer of all MLPs are plain linear layers, i.e. they have no dropout/
     activations.
 
-    Example:
-        # Inputs --> x: [#nodes, 10]; e: [#edges, 2], ...
-        # Enc : encodes node and edge features to 32-dim vectors (MLPs w/ one
-        16-dim hidden layer)
-        Enc = IndependentBlock({'node':10,'edge':2}, 32, hidden_dims=[16])
-        x_enc, e_enc, ... = Enc(x, e, ...);
+    Examples:
+        - Process mode :
+            # Inputs --> x1: [#nodes, 10]; x2: [#edges, 2], ...
+            # Enc : encodes node and edge features to 32-dim vectors (MLPs w/
+            # one 16-dim hidden layer)
+            Enc = IndependentBlock({'node':10,'edge':2, ...}, 32, hidden_dims=[16])
+            x1_new, x2_new, ... = Enc(x1, x2, ...);
+
+        - Update mode :
+            L = IndependentBlock(..., fwd_mode="update")
+            # edge_index is unchanged
+            x_new, edge_index, e_new = L(x, edge_index, edge_attr)
     '''
-    def __init__(self, in_dims, out_dims, hidden_dims=[], **mlp_kwargs):
+    def __init__(self, in_dims, out_dims, hidden_dims=[], fwd_mode="process", **mlp_kwargs):
         '''
         Arg-s:
             - in_dims, out_dims : number of input and output dim-s. Either an
-              int (if all MLPs have same input/output dim-s) or a dict of
-              integers w/ keys "node", "edge", etc..
-              E.g. {'node':10,'edge':2, ...}
+                                  int (if all MLPs have same input/output dim-s) or a dict of
+                                  integers w/ keys "node", "edge", etc..
+                                  E.g. {'node':10,'edge':2, ...}
             - hidden_dims : a list of hidden dimensions {default : [] no hidden
-            layers}, or a dict of lists. E.g. {'node':[],'edge':[8,16], ...}
+                            layers}, or a dict of lists. E.g. {'node':[],'edge':[8,16], ...}
+            - fwd_mode : {Update mode} If `fwd_mode="update"` the forward function
+                         accepts three input arg-s `(x, edge_index, edge_attr)`.
+                         {Process mode} if `fwd_mode="process"`, the forward accepts
+                         same number of inputs as the number of keys in `in_dims`,
+                         `out_dims`, and `hidden_dims` (if they are not dict, then
+                         it is assumed that there are two keys: "node" and "edge").
             - mlp_kwargs : kwarg-s for MLPs.
 
         Notes:
             - In order to have same input, output or hidden dimensions for all
-              MLPs use integers for `in_dims`, `out_dims`, and a list for
+              MLPs, use integers for `in_dims`, `out_dims`, and a list for
               `hidden_dims`, instead of dictionaries.
             - Order of the dict keys is used for an input order for the forward
               function. If more than one of the input arguments ( in_dims,
@@ -422,6 +434,15 @@ class IndependentBlock(torch.nn.Module):
               For python versions <3.7 use int or `OrderedDict` for consistent
               order of the dictionary keys. For further details see doc and
               code for `simgnn.nn.dims_to_dict`.
+            - The forward function of `IndependentBlock` can have two different
+              modes, "update" and "process". In update mode (fwd_mode="update")
+              `IndependentBlock` updates only node (x) and edge variables (edge_attr)
+              and has a consistent input/output signature with update functions and
+              `MessageBlock`. The order of the inputs to the forward function is
+              `(x, edge_index, edge_attr)`, where `edge_index` is ignored and only
+              node and edge var-s are processed using independent MLPs. In update
+              mode, if any of `in_dims`, `out_dims`, or `hidden_dims` are dict or
+              OrderedDict, then node and edge keys must be "node" and "edge" respectively.
         '''
         super(IndependentBlock, self).__init__()
 
@@ -432,11 +453,19 @@ class IndependentBlock(torch.nn.Module):
                                            hidden_dims=hidden_dims[k],
                                            **mlp_kwargs) for k in in_dims})
 
-    def forward(self, *xs):
+        self.forward_fn = self.update_fn if fwd_mode == "update" else self.process_fn
+
+    def update_fn(self, x, edge_index, edge_attr):
+        return self.mlp_dict['node'](x), edge_index, self.mlp_dict['edge'](edge_attr)
+
+    def process_fn(self, *xs):
         ys = []
         for x, k in zip(xs, self.mlp_dict):
             ys.append(self.mlp_dict[k](x))
         return tuple(ys)
+
+    def forward(self, *xs):
+        return self.forward_fn(*xs)
 
 
 class SingleMPStepSquared(torch.nn.Module):
