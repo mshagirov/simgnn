@@ -1,7 +1,14 @@
 import torch
 from torch.nn import ReLU, ModuleList
-from simgnn.nn import mlp, SelectiveActivation, IndependentBlock, MessageBlock  # , Encode_Process_Decode
+from simgnn.nn import mlp, SelectiveActivation, IndependentBlock, MessageBlock, Encode_Process_Decode
 from simgnn.nn import DiffMessage, DiffMessageSquared, AggregateUpdate
+
+
+def construct_simple_gnn(input_dims, latent_dims, output_dims,
+                         encoder_kwrgs={}, processor_kwargs={}, decoder_kwargs={}):
+    return Encode_Process_Decode(GraphEncoder(input_dims, latent_dims, **encoder_kwrgs),
+                                 GraphProcessor(latent_dims, latent_dims, **processor_kwargs),
+                                 GraphDecoder(latent_dims, output_dims, **decoder_kwargs))
 
 
 class GraphEncoder(torch.nn.Module):
@@ -37,6 +44,7 @@ class GraphEncoder(torch.nn.Module):
             hx, edge_index, he = enc(data)
         '''
         super(GraphEncoder, self).__init__()
+
         Fn_kwargs = mlp_kwargs['Fn_kwargs'] if 'Fn_kwargs' in mlp_kwargs else {}
         Fn = mlp_kwargs['Fn'] if 'Fn' in mlp_kwargs else ReLU
 
