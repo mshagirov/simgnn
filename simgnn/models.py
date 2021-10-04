@@ -120,7 +120,7 @@ class GraphProcessor(torch.nn.Module):
     '''
     def __init__(self, in_dims, out_dims, hidden_dims=[],
                  aggr='mean', seq='e', block_type='message',
-                 n_blocks=5, isresidual=True, **mlp_kwargs):
+                 n_blocks=5, is_residual=True, **mlp_kwargs):
         '''
         Arg-s:
              - in_dims, out_dims,
@@ -129,7 +129,7 @@ class GraphProcessor(torch.nn.Module):
                                                  IndependentBlock)
             - block_type : processor layer types, one of ['message', 'independent']
             - n_blocks   : number of repeating blocks.
-            - isresidual : enable/disable residual connections (bool).
+            - is_residual : enable/disable residual connections (bool).
         '''
         super(GraphProcessor, self).__init__()
 
@@ -146,7 +146,7 @@ class GraphProcessor(torch.nn.Module):
 
         self.Fn = SelectiveActivation(var_id=[0, 2], Fn=Fn, Fn_kwargs=Fn_kwargs)
 
-        self.forward_fn = self.res_fwd if isresidual else self.non_res_fwd
+        self.forward_fn = self.res_fwd if is_residual else self.non_res_fwd
 
     def get_independent(self):
         return IndependentBlock(self.in_dims, self.out_dims, hidden_dims=self.hidden_dims,
