@@ -67,25 +67,24 @@ class Encode_Process_Decode(torch.nn.Module):
         return self.decoder(*self.processor(*self.encoder(*X)))
 
 
-class SelectiveActivation(torch.nn.Module):
+class SelectiveLayer(torch.nn.Module):
     '''
-    Apply given activation function Fn on var_id`th input variable(s).
+    Apply given activation function Fn on input variable(s) at indices in `var_id`.
 
     Arg-s:
         - var_id : index of input variable, can be an integer or a list
                    of integers.
-        - Fn : activation function.
-        - Fn_kwargs : dict of keyword arg-s for construcing `Fn`.
+        - Fn : function/layer/activation w/ compatible `forward` method.
 
     E.g.:
-        Fn = SelectiveActivation(var_id=2)
+        Fn = SelectiveLayer(ReLU(), var_id=2)
         y1, y2, y3  = Fn(x1, x2, x3)
     is equivalent to
-        y1, y2, y3 = x1, x2, ReLU(x3)
+        y1, y2, y3 = x1, x2, ReLU()(x3)
     '''
-    def __init__(self, var_id=0, Fn=ReLU, Fn_kwargs={}):
-        super(SelectiveActivation, self).__init__()
-        self.Fn = Fn(**Fn_kwargs)
+    def __init__(self, Fn, var_id=[0, 2]):
+        super(SelectiveLayer, self).__init__()
+        self.Fn = Fn
         self.var_ids = var_id if type(var_id) == list else [var_id]
 
     def forward(self, *vars_in):
@@ -93,6 +92,36 @@ class SelectiveActivation(torch.nn.Module):
         for var_id in self.var_ids:
             vars_in[var_id] = self.Fn(vars_in[var_id])
         return tuple(vars_in)
+
+
+class Residual(SelectiveLayer):
+    '''
+    Enables residual connections for selected variables at indices `var_id`
+    and returns updated variables Ys.
+
+    `Fn` must accept and return same (number of) args as the `self.forward`.
+    Outputs `Ys` are `Ys[i] = Xs[i] + Fn(*Xs)[i]` for `i` in `var_id`, or
+    unchanged `Fn` output Ys[i]=Fn(*Xs)[i] for `i` not in `var_id`.
+
+    # For input *Xs : self.forward(*Xs)
+    Ys = Fn(*Xs)
+    # Selective residual connections
+    for var_id in self.var_ids:
+        Ys[var_id] = Ys[var_id] + Xs[var_id]
+    returns Ys
+
+    For selective layer that processes inputs individually s.a. `Ys[k]=Fn(Xs[k])`
+    see `SelectiveLayer`.
+    '''
+    def __init__(self, Fn, var_id=[0, 2]):
+        super(Residual, self).__init__(Fn, var_id=var_id)
+
+    def forward(self, *Xs):
+        Ys = list(self.Fn(*Xs))
+        for var_id in self.var_ids:
+            Ys[var_id] = Xs[var_id] + Ys[var_id]
+
+        return tuple(Ys)
 
 
 class mlp(torch.nn.Module):

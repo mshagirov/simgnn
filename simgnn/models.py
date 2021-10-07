@@ -1,6 +1,6 @@
 import torch
 from torch.nn import ReLU, ModuleList
-from simgnn.nn import mlp, SelectiveActivation, IndependentBlock, MessageBlock, Encode_Process_Decode
+from simgnn.nn import mlp, SelectiveLayer, Residual, IndependentBlock, MessageBlock, Encode_Process_Decode
 from simgnn.nn import DiffMessage, DiffMessageSquared, AggregateUpdate
 
 
@@ -29,15 +29,15 @@ class GraphEncoder(torch.nn.Module):
         - h_x, edge_index, h_e: processed node, edge variables and concatenated
                                 `edge_index`.
     '''
-    def __init__(self, in_dims, out_dims, hidden_dims=[], **mlp_kwargs):
+    def __init__(self, in_dims, out_dims, hidden_dims=[], block_Fn=ReLU, block_Fn_kwargs={}, **mlp_kwargs):
         '''
         Same input arg-s as the `IndependentBlock` with mode set to `fwd_mode='update'`.
 
-        Uses ReLU as a default activation, to set a different activation function pass keyword arg-s:
-            - Fn : default torch.nn.ReLU
-            - Fn_kwargs : `dict` of keyword arg-s for constructing `Fn`, default {}.
-        Note that same `Fn` is used for both hidden layers of `IndependentBlock` MLPs, and
-        for the last layer of `GraphEncoder`.
+        Additional keyword arg-s:
+        - block_Fn : activation function for the block.
+        - block_Fn_kwargs :  dict of keyword arg-s for `block_Fn`.
+
+        To set activation functions of MLPs use `Fn` and `Fn_kwargs`.
 
         Example:
             enc = GraphEncoder(10, 256, Fn=torch.nn.LeakyReLU, Fn_kwargs={'negative_slope':0.2})
@@ -45,14 +45,11 @@ class GraphEncoder(torch.nn.Module):
         '''
         super(GraphEncoder, self).__init__()
 
-        Fn_kwargs = mlp_kwargs['Fn_kwargs'] if 'Fn_kwargs' in mlp_kwargs else {}
-        Fn = mlp_kwargs['Fn'] if 'Fn' in mlp_kwargs else ReLU
-
         self.independent = IndependentBlock(in_dims, out_dims,
                                             hidden_dims=hidden_dims,
                                             fwd_mode='update', **mlp_kwargs)
         # apply activation function on 1st and 3rd input var-s
-        self.Fn = SelectiveActivation(var_id=[0, 2], Fn=Fn, Fn_kwargs=Fn_kwargs)
+        self.Fn = SelectiveLayer(block_Fn(**block_Fn_kwargs))
 
     def forward(self, data):
         # convert to undirected graph : cat([e_ij, e_ji])
@@ -120,7 +117,8 @@ class GraphProcessor(torch.nn.Module):
     '''
     def __init__(self, in_dims, out_dims, hidden_dims=[],
                  aggr='mean', seq='e', block_type='message',
-                 n_blocks=5, is_residual=True, **mlp_kwargs):
+                 n_blocks=5, is_residual=True, block_Fn=ReLU,
+                 block_Fn_kwargs={}, **mlp_kwargs):
         '''
         Arg-s:
              - in_dims, out_dims,
@@ -130,46 +128,49 @@ class GraphProcessor(torch.nn.Module):
             - block_type : processor layer types, one of ['message', 'independent']
             - n_blocks   : number of repeating blocks.
             - is_residual : enable/disable residual connections (bool).
+            - block_Fn : activation function for the block.
+            - block_Fn_kwargs :  dict of keyword arg-s for `block_Fn`.
         '''
         super(GraphProcessor, self).__init__()
 
+        self.is_residual = is_residual
         self.aggr, self.seq = aggr, seq
         self.in_dims, self.out_dims = in_dims, out_dims
         self.hidden_dims, self.mlp_kwargs = hidden_dims, mlp_kwargs
 
-        Fn_kwargs = mlp_kwargs['Fn_kwargs'] if 'Fn_kwargs' in mlp_kwargs else {}
-        Fn = mlp_kwargs['Fn'] if 'Fn' in mlp_kwargs else ReLU
+        # GraphNet block constructors
+        if block_type == 'message':
+            gnn_block = self.get_message
+        elif block_type == 'independent':
+            gnn_block = self.get_independent
 
-        gnn_block = self.get_message if block_type == 'message' else self.get_independent
+        gnn_layers = []
+        for k in range(n_blocks):
+            # GN block
+            gnn_layers.append(gnn_block())
+            # Activation function
+            gnn_layers.append(SelectiveLayer(block_Fn(**block_Fn_kwargs)))
 
-        self.layers = ModuleList([gnn_block() for k in range(n_blocks)])
-
-        self.Fn = SelectiveActivation(var_id=[0, 2], Fn=Fn, Fn_kwargs=Fn_kwargs)
-
-        self.forward_fn = self.res_fwd if is_residual else self.non_res_fwd
+        self.layers = ModuleList(gnn_layers)
 
     def get_independent(self):
-        return IndependentBlock(self.in_dims, self.out_dims, hidden_dims=self.hidden_dims,
-                                fwd_mode='update', **self.mlp_kwargs)
+        gnn = IndependentBlock(self.in_dims, self.out_dims, hidden_dims=self.hidden_dims,
+                               fwd_mode='update', **self.mlp_kwargs)
+        if self.is_residual:
+            gnn = Residual(gnn)
+        return gnn
 
     def get_message(self):
-        return MessageBlock(self.in_dims, self.out_dims, hidden_dims=self.hidden_dims,
-                            aggr=self.aggr, seq=self.seq, **self.mlp_kwargs)
+        gnn = MessageBlock(self.in_dims, self.out_dims, hidden_dims=self.hidden_dims,
+                           aggr=self.aggr, seq=self.seq, **self.mlp_kwargs)
+        if self.is_residual:
+            gnn = Residual(gnn)
+        return gnn
 
-    def res_fwd(self, x, edge_index, edge_attr):
+    def forward(self, x, edge_index, edge_attr):
         for layer in self.layers:
-            hx, _, he = self.Fn(*layer(x, edge_index, edge_attr))
-            x = (x + hx)/2
-            edge_attr = (edge_attr + he)/2
+            x, _, edge_attr = layer(x, edge_index, edge_attr)
         return x, edge_index, edge_attr
-
-    def non_res_fwd(self, x, edge_index, edge_attr):
-        for layer in self.layers:
-            x, _, edge_attr = self.Fn(*layer(x, edge_index, edge_attr))
-        return x, edge_index, edge_attr
-
-    def forward(self, *xs):
-        return self.forward_fn(*xs)
 
 
 class SingleMPStepSquared(torch.nn.Module):
