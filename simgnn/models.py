@@ -1,6 +1,7 @@
 import torch
-from torch.nn import ReLU, ModuleList
-from simgnn.nn import mlp, SelectiveLayer, Residual, IndependentBlock, MessageBlock, Encode_Process_Decode
+from torch.nn import ReLU, ModuleList, Dropout, BatchNorm1d, LayerNorm
+from simgnn.nn import dims_to_dict, mlp, SelectiveLayer, Residual, SequentialUpdate
+from simgnn.nn import IndependentBlock, MessageBlock, Encode_Process_Decode
 from simgnn.nn import DiffMessage, DiffMessageSquared, AggregateUpdate
 
 
@@ -118,7 +119,8 @@ class GraphProcessor(torch.nn.Module):
     def __init__(self, in_dims, out_dims, hidden_dims=[],
                  aggr='mean', seq='e', block_type='message',
                  n_blocks=5, is_residual=True, block_Fn=ReLU,
-                 block_Fn_kwargs={}, **mlp_kwargs):
+                 block_Fn_kwargs={}, block_p=0, block_norm=True,
+                 norm_type='ln', **mlp_kwargs):
         '''
         Arg-s:
              - in_dims, out_dims,
@@ -129,42 +131,58 @@ class GraphProcessor(torch.nn.Module):
             - n_blocks   : number of repeating blocks.
             - is_residual : enable/disable residual connections (bool).
             - block_Fn : activation function for the block.
-            - block_Fn_kwargs :  dict of keyword arg-s for `block_Fn`.
+            - block_Fn_kwargs :  dict of (same) keyword arg-s for `block_Fn`.
+            - block_p : block dropout prob-y. Uses same prob-s for both nodes and
+                        edges if `block_p` is `float`, or individual "node" and "edge"
+                        dropout prob-s if `block_p` is a dict w/ keys "node" and "edge".
+            - block_norm : enable/disable normalisation layer for the block.
+            - norm_type : one of 'ln' (LayerNorm) or 'bn' (BatchNorm1d).
         '''
         super(GraphProcessor, self).__init__()
 
-        self.is_residual = is_residual
         self.aggr, self.seq = aggr, seq
-        self.in_dims, self.out_dims = in_dims, out_dims
-        self.hidden_dims, self.mlp_kwargs = hidden_dims, mlp_kwargs
+        self.mlp_kwargs = mlp_kwargs
 
-        # GraphNet block constructors
+        block_p, self.in_dims, self.out_dims, self.hidden_dims = dims_to_dict(block_p,
+                                                                              in_dims,
+                                                                              out_dims,
+                                                                              hidden_dims)
+        # GraphNet block constructor
         if block_type == 'message':
-            gnn_block = self.get_message
+            get_block = self.get_message
         elif block_type == 'independent':
-            gnn_block = self.get_independent
+            get_block = self.get_independent
+
+        # Normalisation layer constructor
+        norm_layer = LayerNorm if norm_type == 'ln' else BatchNorm1d
 
         gnn_layers = []
         for k in range(n_blocks):
-            # GN block
-            gnn_layers.append(gnn_block())
-            # Activation function
-            gnn_layers.append(SelectiveLayer(block_Fn(**block_Fn_kwargs)))
+            block = [get_block(), SelectiveLayer(block_Fn(**block_Fn_kwargs))]
+
+            # normalisation layers
+            if block_norm:
+                block.append(SelectiveLayer(norm_layer(self.out_dims['node']), var_id=0))
+                block.append(SelectiveLayer(norm_layer(self.out_dims['edge']), var_id=2))
+
+            # Dropout layers
+            if block_p['node'] > 0:
+                block.append(SelectiveLayer(Dropout(block_p['node']), var_id=0))
+            if block_p['edge'] > 0:
+                block.append(SelectiveLayer(Dropout(block_p['edge']), var_id=2))
+
+            gnn_layers.append(Residual(SequentialUpdate(*block)))
 
         self.layers = ModuleList(gnn_layers)
 
     def get_independent(self):
         gnn = IndependentBlock(self.in_dims, self.out_dims, hidden_dims=self.hidden_dims,
                                fwd_mode='update', **self.mlp_kwargs)
-        if self.is_residual:
-            gnn = Residual(gnn)
         return gnn
 
     def get_message(self):
         gnn = MessageBlock(self.in_dims, self.out_dims, hidden_dims=self.hidden_dims,
                            aggr=self.aggr, seq=self.seq, **self.mlp_kwargs)
-        if self.is_residual:
-            gnn = Residual(gnn)
         return gnn
 
     def forward(self, x, edge_index, edge_attr):
