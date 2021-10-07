@@ -118,7 +118,7 @@ class GraphProcessor(torch.nn.Module):
     '''
     def __init__(self, in_dims, out_dims, hidden_dims=[],
                  aggr='mean', seq='e', block_type='message',
-                 n_blocks=5, is_residual=True, block_Fn=ReLU,
+                 n_blocks=1, is_residual=True, block_Fn=ReLU,
                  block_Fn_kwargs={}, block_p=0, block_norm=True,
                  norm_type='ln', **mlp_kwargs):
         '''
@@ -171,7 +171,11 @@ class GraphProcessor(torch.nn.Module):
             if block_p['edge'] > 0:
                 block.append(SelectiveLayer(Dropout(block_p['edge']), var_id=2))
 
-            gnn_layers.append(Residual(SequentialUpdate(*block)))
+            if is_residual:
+                gnn = Residual(SequentialUpdate(*block))
+            else:
+                gnn = SequentialUpdate(*block)
+            gnn_layers.append(gnn)
 
         self.layers = ModuleList(gnn_layers)
 
