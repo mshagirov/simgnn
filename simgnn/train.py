@@ -177,7 +177,7 @@ def load_log(fpath):
     return train_log
 
 
-def plot_losses(train_log, loaders, dataset_legend, figsize=[15, 8]):
+def plot_losses(train_log, loaders, dataset_legend, figsize=[15, 8],**plot_kwargs):
     '''Plot training losses for the logged datasets in `train_log`'''
     if figsize is not None:
         plt.figure(figsize=figsize)
@@ -185,7 +185,7 @@ def plot_losses(train_log, loaders, dataset_legend, figsize=[15, 8]):
     for data_name in loaders:
         # plot losses for each dataset
         plt.plot(training_epochs, train_log[f'{data_name}_loss_tot'], lw=3,
-                 label=f'{dataset_legend[data_name]}')
+                 label=f'{dataset_legend[data_name]}', **plot_kwargs)
     plt.legend()
 
 
