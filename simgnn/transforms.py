@@ -1,6 +1,38 @@
 import torch
 
 
+class AppendReversedEdges(object):
+    '''
+    Appends reversed (src-tgt --> tgt-src) edges to the graph. Optionally, reverses attributes (reverse is negative:
+    e_st=-e_ts) and copies edge tensions (x_st=x_ts)
+    '''
+    def __init__(self, reverse_attr=False, reverse_tension=False):
+        self.reverse_attr = reverse_attr
+        self.reverse_tension = reverse_tension
+
+    def __call__(self, data):
+        data.edge_index = torch.cat([data.edge_index, torch.stack([data.edge_index[1], data.edge_index[0]], dim=0)],
+                                    dim=1).contiguous()
+        if self.reverse_attr:
+            data.edge_attr = torch.cat([data.edge_attr, -data.edge_attr], dim=0).contiguous()
+        if self.reverse_tension:
+            data.edge_tensions = torch.cat([data.edge_tensions, data.edge_tensions], dim=0).contiguous()
+        return data
+
+    def __repr__(self):
+        return '{}(reverse_attr={}, reverse_tension={})'.format(self.__class__.__name__, self.reverse_attr,
+                                                                self.reverse_tension)
+
+
+class AppendEdgeDir(object):
+    def __call__(self, data):
+        data.edge_dir = data.edge_attr/torch.norm(data.edge_attr,dim=1,keepdim=True)
+        return data
+
+    def __repr__(self):
+        return '{}'.format(self.__class__.__name__)
+
+
 class Pos2Vec(object):
     '''Computes edge directions from connected node positions (source to target).'''
     def __init__(self, norm=True, scale=None, cat=False):

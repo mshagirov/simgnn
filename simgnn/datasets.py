@@ -70,7 +70,8 @@ class CellData(Data):
 class VertexDynamics(Dataset):
     '''For processing and working with vertex dynamics simulation output files.'''
 
-    def __init__(self, root, window_size=5, transform=None, pre_transform=None, smoothing=False, sma_lag_time=None):
+    def __init__(self, root, window_size=5, transform=None, pre_transform=None, pre_filter=None,
+                 smoothing=False, sma_lag_time=None):
         '''
         Assumes `root` dir contains folder named `raw` with all vertex dynamics simulation results
         for tracing vertex trajectories, building graphs, and variables for computing edge tensions
@@ -104,7 +105,7 @@ class VertexDynamics(Dataset):
         self.smoothing = smoothing
         self.sma_lag_time = sma_lag_time
 
-        super(VertexDynamics, self).__init__(root, transform, pre_transform)
+        super(VertexDynamics, self).__init__(root, transform, pre_transform, pre_filter)
         # super's __init__ runs process() [and download() if defined].
 
     def apply_smoothing(self, v_pos):
@@ -323,7 +324,8 @@ class HaraMovies(VertexDynamics):
     and cell pressures, otherwise it is similar to the VertexDynamics dataset.
     '''
 
-    def __init__(self, root, window_size=5, transform=None, pre_transform=None, smoothing=False, sma_lag_time=None):
+    def __init__(self, root, window_size=5, transform=None, pre_transform=None, pre_filter=None,
+                 smoothing=False, sma_lag_time=None):
         '''
         Assumes `root` dir contains folder named `raw` with following files that contain results
         for tracing vertex trajectories, building graphs:
@@ -353,7 +355,7 @@ class HaraMovies(VertexDynamics):
         - Use `pre_transform` for normalising and pre-processing dataset(s).
         '''
         super(HaraMovies, self).__init__(root, window_size=window_size, transform=transform,
-                                         pre_transform=pre_transform,
+                                         pre_transform=pre_transform, pre_filter=pre_filter,
                                          smoothing=smoothing, sma_lag_time=sma_lag_time)
 
     @property
@@ -422,7 +424,8 @@ class HaraAblation(VertexDynamics):
         - `pos2nodeXY`
     '''
 
-    def __init__(self, root, window_size=5, transform=None, pre_transform=None, smoothing=False, sma_lag_time=None):
+    def __init__(self, root, window_size=5, transform=None, pre_transform=None, pre_filter=None,
+                 smoothing=False, sma_lag_time=None):
         '''
         Assumes `root` dir contains folder named `raw` with following files that contain results
         for tracing vertex trajectories, building graphs:
@@ -465,7 +468,7 @@ class HaraAblation(VertexDynamics):
           velocities (`x`) and T+0 positions (`pos`).
         '''
         super(HaraAblation, self).__init__(root, window_size=window_size, transform=transform,
-                                           pre_transform=pre_transform,
+                                           pre_transform=pre_transform, pre_filter=pre_filter,
                                            smoothing=smoothing, sma_lag_time=sma_lag_time)
 
     @property
