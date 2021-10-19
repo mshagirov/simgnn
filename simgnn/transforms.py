@@ -25,12 +25,26 @@ class AppendReversedEdges(object):
 
 
 class AppendEdgeDir(object):
+    '''
+    Computes edge directions, unit vectors from `src`
+    to `tgt` vertices (i.e. `src, tgt = data.edge_index`), and appends them as
+    a new graph variable `data.edge_dir`.
+    '''
+    def __init__(self, use_edge_attr=False):
+        self.use_edge_attr = use_edge_attr
+
     def __call__(self, data):
-        data.edge_dir = data.edge_attr/torch.norm(data.edge_attr,dim=1,keepdim=True)
+        if self.use_edge_attr:
+            e_vec = data.edge_attr
+        else:
+            row, col = data.edge_index  # src, tgt indices
+            e_vec = data.pos[col] - data.pos[row]  # src to tgt vectors
+
+        data.edge_dir = e_vec/torch.norm(e_vec, dim=1, keepdim=True)
         return data
 
     def __repr__(self):
-        return '{}'.format(self.__class__.__name__)
+        return '{}(use_edge_attr={})'.format(self.__class__.__name__, self.use_edge_attr)
 
 
 class Pos2Vec(object):
