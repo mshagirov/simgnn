@@ -15,8 +15,10 @@ class AppendReversedEdges(object):
                                     dim=1).contiguous()
         if self.reverse_attr:
             data.edge_attr = torch.cat([data.edge_attr, -data.edge_attr], dim=0).contiguous()
+
         if self.reverse_tension:
             data.edge_tensions = torch.cat([data.edge_tensions, data.edge_tensions], dim=0).contiguous()
+
         return data
 
     def __repr__(self):
@@ -29,6 +31,8 @@ class AppendEdgeDir(object):
     Computes edge directions, unit vectors from `src`
     to `tgt` vertices (i.e. `src, tgt = data.edge_index`), and appends them as
     a new graph variable `data.edge_dir`.
+
+    Uses `data.edge_attr` as edge vectors (if `use_edge_attr=True`) instead of computing them.
     '''
     def __init__(self, use_edge_attr=False):
         self.use_edge_attr = use_edge_attr
