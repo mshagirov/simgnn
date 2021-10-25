@@ -186,7 +186,7 @@ def plot_losses(train_log, loaders, dataset_legend, figsize=[15, 8],
     training_epochs = np.arange(train_log['total_epochs'])
     if return_axs:
         axs = []
-    
+
     for data_name in loaders:
         # plot losses for each dataset
         ax = plt.plot(training_epochs, train_log[f'{data_name}_loss_tot'], lw=3,

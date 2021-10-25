@@ -491,6 +491,8 @@ class HaraAblation(VertexDynamics):
         - cell graph topology and number of nodes is constant w.r.t. to frames.
         '''
         for raw_path in self.raw_paths:
+            # Rosette label
+            is_rosette = bool(load_array(path.join(raw_path, 'is_rosette.npy')).item())
             # Load node positions from raw_path and convert to (windowed) node attrib-s and targets.
             node_pos, X_node = self.pos2nodeXY(pos_path=path.join(raw_path, 'vtx_pos.npy'))
 
@@ -516,7 +518,8 @@ class HaraAblation(VertexDynamics):
                             node2cell_index=node2cell_index, cell2node_index=cell2node_index,
                             pos=node_pos, x=X_node, y=None,
                             cell_pressures=None,
-                            edge_tensions=None, edge_recoils=edge_recoils
+                            edge_tensions=None, edge_recoils=edge_recoils,
+                            is_rosette=is_rosette
                             )
             if self.pre_filter is not None and not self.pre_filter(data):
                 continue
