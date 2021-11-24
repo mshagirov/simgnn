@@ -51,7 +51,7 @@ class GraphEncoder(torch.nn.Module):
         self.Fn = SelectiveLayer(block_Fn(**block_Fn_kwargs))
 
     def forward(self, d):
-        d.hv, _, d.he = self.Fn(*self.independent(d.x, d.edge_index, d.edge_attr))
+        d.h_v, _, d.h_e = self.Fn(*self.independent(d.x, d.edge_index, d.edge_attr))
         return d
 
 
@@ -80,7 +80,7 @@ class GraphDecoder(torch.nn.Module):
                                             fwd_mode='update', **mlp_kwargs)
 
     def forward(self, d):
-        d.h_e = scatter(d.h_e, d.edge_id, dim=0, reduce=self.edge_reduce, dim_size=d.edge_tensions.size(0))
+        d.h_e = scatter(d.h_e, d.edge_id, dim=0, reduce=self.edge_reduce, dim_size=d.num_edges//2)
         # "update" mode: passes d.edge_index unchanged and ignored
         h_v, _, h_e = self.independent(d.h_v, d.edge_index, d.h_e)
         return h_v, h_e.reshape((h_e.size(0),)), None
