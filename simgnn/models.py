@@ -1,5 +1,6 @@
 import torch
 from torch.nn import ReLU, ModuleList, Dropout, BatchNorm1d, LayerNorm
+from torch_scatter import scatter
 from simgnn.nn import dims_to_dict, mlp, SelectiveLayer, Residual, SequentialUpdate
 from simgnn.nn import IndependentBlock, MessageBlock, Encode_Process_Decode
 from simgnn.nn import DiffMessage, DiffMessageSquared, AggregateUpdate
@@ -14,21 +15,18 @@ def construct_simple_gnn(input_dims, latent_dims, output_dims,
 
 class GraphEncoder(torch.nn.Module):
     '''
-    Graph encoder model for encoding pt-geometric graph data. Before passing the
-    input graph to MLPs, copy of reversed edges (e_ji) is concatenated to the graph
-    since datasets in `simgnn.datasets` contain only one copy (e_ij).
+    Graph encoder model for encoding pt-geometric graph data. Assumes that a copy of reversed edges (e_ji)
+    with their corresponding edge features are concatenated to the graph.
 
-    new_edge_index = concatenate(e_ij, e_ji)
-    new_edge_attr = concatenate(edge_attr, -edge_attr)  # this passed to MLP
+    - Note that datasets in `simgnn.datasets` contain only one copy of edges (e_ij).
 
     `GraphEncoder.forward`:
     -----
     Input arg-s:
-        - data : pt-geometric graph w/ properties `x`, `edge_attr` and `edge_index`.
+        - data : pt-geometric graph w/ properties `x`, `edge_attr` and `edge_index` (undirected graph).
 
     Returns:
-        - h_x, edge_index, h_e: processed node, edge variables and concatenated
-                                `edge_index`.
+        - data with two new variables `h_v` (node features) and `h_e` (edge features).
     '''
     def __init__(self, in_dims, out_dims, hidden_dims=[], block_Fn=ReLU, block_Fn_kwargs={}, **mlp_kwargs):
         '''
@@ -41,8 +39,8 @@ class GraphEncoder(torch.nn.Module):
         To set activation functions of MLPs use `Fn` and `Fn_kwargs`.
 
         Example:
-            enc = GraphEncoder(10, 256, Fn=torch.nn.LeakyReLU, Fn_kwargs={'negative_slope':0.2})
-            hx, edge_index, he = enc(data)
+            enc = GraphEncoder(10, 256, block_Fn=torch.nn.LeakyReLU, Fn_kwargs={'negative_slope':0.2})
+            data = enc(data) # adds new variables data.h_v, data.h_e
         '''
         super(GraphEncoder, self).__init__()
 
@@ -52,15 +50,9 @@ class GraphEncoder(torch.nn.Module):
         # apply activation function on 1st and 3rd input var-s
         self.Fn = SelectiveLayer(block_Fn(**block_Fn_kwargs))
 
-    def forward(self, data):
-        # convert to undirected graph : cat([e_ij, e_ji])
-        edge_index = torch.cat([data.edge_index,
-                                torch.stack([data.edge_index[1], data.edge_index[0]], dim=0)],
-                               dim=1).contiguous()
-        # edge features for undirected graph : e_ij = - e_ji
-        edge_attr = torch.cat([data.edge_attr, -data.edge_attr], dim=0).contiguous()
-
-        return self.Fn(*self.independent(data.x, edge_index, edge_attr))
+    def forward(self, d):
+        d.hv, _, d.he = self.Fn(*self.independent(d.x, d.edge_index, d.edge_attr))
+        return d
 
 
 class GraphDecoder(torch.nn.Module):
@@ -71,7 +63,7 @@ class GraphDecoder(torch.nn.Module):
     `GraphDecoder.forward`:
     -----
     Input arg-s:
-        -  x, edge_index, edge_attr : `x` and `edge_attr` are processed using independent MLPs.
+        -  x, edge_index, edge_attr : `h_v` (node) and `h_e` (edge) features are processed using independent MLPs,
                                       `edge_index` is ignored. Before passing it to its MLP,
                                       two halves of `edge_attr` along `axis=0` are summed to pool
                                       edges with opposite directions (new_e = e_ij + e_ji), this
@@ -91,10 +83,11 @@ class GraphDecoder(torch.nn.Module):
                                             hidden_dims=hidden_dims,
                                             fwd_mode='update', **mlp_kwargs)
 
-    def forward(self, x, edge_index, edge_attr):
-        edge_attr = edge_attr[:edge_attr.size(0)//2, :] + edge_attr[(edge_attr.size(0)//2):, :]
-        y, _, e_out = self.independent(x, edge_index, edge_attr)
-        return y, e_out.reshape((e_out.size(0),)), None
+    def forward(self, d):
+        d.h_e = scatter(d.h_e, d.edge_id, dim=0, reduce='sum', dim_size=d.edge_tensions.size(0))
+        # "update" mode: passes d.edge_index unchanged and ignored
+        h_v, _, h_e = self.independent(d.h_v, d.edge_index, d.h_e)
+        return h_v, h_e.reshape((h_e.size(0),)), None
 
 
 class GraphProcessor(torch.nn.Module):
@@ -111,10 +104,10 @@ class GraphProcessor(torch.nn.Module):
     `GraphProcessor.forward`:
     -----
     Input arg-s:
-         - x, edge_index, edge_attr : graph var-s
+         - data : pt-geometric graph w/ fields `edge_index`,  `h_v` (node features) and `h_e` (edge features).
 
     Returns:
-        - x, edge_index, edge_attr : processed graph var-s
+        - data : processed graph, with new the `h_v` and `h_e` var-s.
     '''
     def __init__(self, in_dims, out_dims, hidden_dims=[],
                  aggr='mean', seq='e', block_type='message',
@@ -189,10 +182,10 @@ class GraphProcessor(torch.nn.Module):
                            aggr=self.aggr, seq=self.seq, **self.mlp_kwargs)
         return gnn
 
-    def forward(self, x, edge_index, edge_attr):
+    def forward(self, d):
         for layer in self.layers:
-            x, _, edge_attr = layer(x, edge_index, edge_attr)
-        return x, edge_index, edge_attr
+            d.h_v, _, d.h_e = layer(d.h_v, d.edge_index, d.h_e)
+        return d
 
 
 class SingleMPStepSquared(torch.nn.Module):
