@@ -6,29 +6,54 @@ class AppendReversedEdges(object):
     Appends reversed (src-tgt --> tgt-src) edges to the graph. Optionally, reverses attributes (reverse is negative:
     e_st=-e_ts) and copies edge tensions (x_st=x_ts)
     '''
-    def __init__(self, reverse_attr=False, reverse_tension=False):
+    def __init__(self, reverse_attr=True, reverse_tension=False, edge_id=True):
+        '''
+        Arg-s:
+        - reverse_attr : if true, appends negative copy of edge attributes `cat([edge_attr, -edge_attr])-->edge_attr`.
+        - reverse_tension : if true, appends copy of edge tensions `cat([edge_tensions,edge_tensions])-->edge_tensions`.
+        - edge_id : if true, adds new graph variable `edge_id` with int IDs for edges.
+        '''
         self.reverse_attr = reverse_attr
         self.reverse_tension = reverse_tension
+        self.edge_id = edge_id
 
     def __call__(self, data):
-        data.edge_index = torch.cat([data.edge_index, torch.stack([data.edge_index[1], data.edge_index[0]], dim=0)],
-                                    dim=1).contiguous()
+        if self.edge_id:
+            data.edge_id = torch.cat([torch.arange(data.num_edges), torch.arange(data.num_edges)], dim=0).contiguous()
         if self.reverse_attr:
             data.edge_attr = torch.cat([data.edge_attr, -data.edge_attr], dim=0).contiguous()
-
         if self.reverse_tension:
             data.edge_tensions = torch.cat([data.edge_tensions, data.edge_tensions], dim=0).contiguous()
 
+        data.edge_index = torch.cat([data.edge_index,
+                                    torch.stack([data.edge_index[1], data.edge_index[0]], dim=0)], dim=1).contiguous()
         return data
 
     def __repr__(self):
-        return '{}(reverse_attr={}, reverse_tension={})'.format(self.__class__.__name__, self.reverse_attr,
-                                                                self.reverse_tension)
+        return '{}(reverse_attr={}, reverse_tension={}, edge_id={})'.format(self.__class__.__name__, self.reverse_attr,
+                                                                            self.reverse_tension, self.edge_id)
+
+
+class AppendEdgeNorm(object):
+    '''
+    Appends norms of `data.edge_attr` vectors to the end of `data.edge_attr`. Assumes `data.edge_attr.dim()`>1.
+
+    `cat([data.edge_attr, norms])-->data.edge_attr`
+    '''
+    def __init__(self):
+        pass
+
+    def __call__(self, data):
+        data.edge_attr = torch.cat([data.edge_attr, torch.linalg.norm(data.edge_attr, dim=1, keepdim=True)], dim=-1)
+        return data
+
+    def __repr__(self):
+        return '{}()'.format(self.__class__.__name__)
 
 
 class AppendEdgeDir(object):
     '''
-    Computes edge directions, unit vectors from `src`
+    Computes edge directions, (spatial) unit vectors from `src`
     to `tgt` vertices (i.e. `src, tgt = data.edge_index`), and appends them as
     a new graph variable `data.edge_dir`.
 
@@ -44,7 +69,7 @@ class AppendEdgeDir(object):
             row, col = data.edge_index  # src, tgt indices
             e_vec = data.pos[col] - data.pos[row]  # src to tgt vectors
 
-        data.edge_dir = e_vec/torch.norm(e_vec, dim=1, keepdim=True)
+        data.edge_dir = e_vec/torch.linalg.norm(e_vec, dim=1, keepdim=True)
         return data
 
     def __repr__(self):
@@ -210,7 +235,7 @@ class ScalePressure(ScaleTension):
 class TransformTension(TransformVar):
     '''
     Applies a transformation T on tension in `data.edge_tensions`:
-    `data.edge_tensions = ( data.edge_tensions )`.
+    `data.edge_tensions = T( data.edge_tensions )`.
     '''
     def __init__(self, T):
         '''
