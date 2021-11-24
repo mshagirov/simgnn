@@ -2,15 +2,15 @@ import torch
 from torch.nn import ReLU, ModuleList, Dropout, BatchNorm1d, LayerNorm
 from torch_scatter import scatter
 from simgnn.nn import dims_to_dict, mlp, SelectiveLayer, Residual, SequentialUpdate
-from simgnn.nn import IndependentBlock, MessageBlock, Encode_Process_Decode
+from simgnn.nn import IndependentBlock, MessageBlock, Encode_Process_Decode_ptgraph
 from simgnn.nn import DiffMessage, DiffMessageSquared, AggregateUpdate
 
 
 def construct_simple_gnn(input_dims, latent_dims, output_dims,
                          encoder_kwrgs={}, processor_kwargs={}, decoder_kwargs={}):
-    return Encode_Process_Decode(GraphEncoder(input_dims, latent_dims, **encoder_kwrgs),
-                                 GraphProcessor(latent_dims, latent_dims, **processor_kwargs),
-                                 GraphDecoder(latent_dims, output_dims, **decoder_kwargs))
+    return Encode_Process_Decode_ptgraph(GraphEncoder(input_dims, latent_dims, **encoder_kwrgs),
+                                         GraphProcessor(latent_dims, latent_dims, **processor_kwargs),
+                                         GraphDecoder(latent_dims, output_dims, **decoder_kwargs))
 
 
 class GraphEncoder(torch.nn.Module):

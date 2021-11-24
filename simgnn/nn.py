@@ -67,6 +67,34 @@ class Encode_Process_Decode(torch.nn.Module):
         return self.decoder(*self.processor(*self.encoder(*X)))
 
 
+class Encode_Process_Decode_ptgraph(torch.nn.Module):
+    '''
+    Encode-Process-Decode framework from "Learning to Simulate Complex Physics with Graph Networks" by
+    A. Sanchez-Gonzalez et al. (2020) for pt-geometric graph objects.
+    '''
+    def __init__(self, encoder, processor, decoder):
+        '''
+        Arg-s:
+            encoder, processor, decoder : torch.nn.Module objects that accept pt-geometric graph as an input, i.e.
+            all three modules accept one input argument—pt-geometric graph.
+
+            - encoder : encoder for pt-geometric graph.
+            - processor : the processor module accepts one input arg., and must be compatible with the encoder module.
+            - decoder : decoder module must be compatible with the processor module. Decoder module can output any
+                        number of output variables.
+
+        Returns `output` from:
+            output = decoder(processor(encoder(data)))
+        '''
+        super(Encode_Process_Decode_ptgraph, self).__init__()
+        self.encoder = encoder
+        self.processor = processor
+        self.decoder = decoder
+
+    def forward(self, d):
+        return self.decoder(self.processor(self.encoder(d)))
+
+
 class SelectiveLayer(torch.nn.Module):
     '''
     Apply given activation function Fn on input variable(s) at indices in `var_id`.
