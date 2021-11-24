@@ -63,28 +63,24 @@ class GraphDecoder(torch.nn.Module):
     `GraphDecoder.forward`:
     -----
     Input arg-s:
-        -  x, edge_index, edge_attr : `h_v` (node) and `h_e` (edge) features are processed using independent MLPs,
-                                      `edge_index` is ignored. Before passing it to its MLP,
-                                      two halves of `edge_attr` along `axis=0` are summed to pool
-                                      edges with opposite directions (new_e = e_ij + e_ji), this
-                                      assumes that edges with opposite directions are concatenated
-                                      as (i.e. `edge_attr = [e_ij, e_ij]`, same applies to the
-                                      `edge_index`, e.g. in the previous message passing layers).
-
+        -  data : pt-geometric graph w/ `h_v` (node) and `h_e` (edge) features (processed using independent MLPs),
+                  `edge_index` is ignored. Before passing it to its MLP, `h_e` are pooled along `dim=0` using
+                  `torch_scatter.scatter()` and `data.edge_id`. Set pooling/aggregation scheme w/ `edge_reduce`
+                  keyword argument.
     Returns:
         - y_pred: is a node-wise output (e.g. node velocity).
         - tension : edge tensions (for undirected edges).
-        - `None` is a place holder to make model compatible with training function in `train.py`.
+        - `None` is a placeholder to make model compatible with training function in `train.py`.
     '''
-    def __init__(self, in_dims, out_dims, hidden_dims=[], **mlp_kwargs):
+    def __init__(self, in_dims, out_dims, hidden_dims=[], edge_reduce='sum', **mlp_kwargs):
         super(GraphDecoder, self).__init__()
-
+        self.edge_reduce = edge_reduce
         self.independent = IndependentBlock(in_dims, out_dims,
                                             hidden_dims=hidden_dims,
                                             fwd_mode='update', **mlp_kwargs)
 
     def forward(self, d):
-        d.h_e = scatter(d.h_e, d.edge_id, dim=0, reduce='sum', dim_size=d.edge_tensions.size(0))
+        d.h_e = scatter(d.h_e, d.edge_id, dim=0, reduce=self.edge_reduce, dim_size=d.edge_tensions.size(0))
         # "update" mode: passes d.edge_index unchanged and ignored
         h_v, _, h_e = self.independent(d.h_v, d.edge_index, d.h_e)
         return h_v, h_e.reshape((h_e.size(0),)), None
