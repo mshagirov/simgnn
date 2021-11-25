@@ -109,8 +109,8 @@ def train_model(model,
                 n_samples[f'{state}_loss_y'] += data.x.size(0)
 
                 # total loss values are valid only for datasets w/ all variable
-                running_losses[f'{state}_loss_tot'] += loss.item()*data.x.size(0)
-                n_samples[f'{state}_loss_tot'] += data.x.size(0)
+                # running_losses[f'{state}_loss_tot'] += loss.item()*data.x.size(0)
+                # n_samples[f'{state}_loss_tot'] += data.x.size(0)
 
                 if use_force_loss[state][0]:
                     running_losses[f'{state}_loss_T'] += tens_loss.item()*data.edge_tensions.size(0)
@@ -120,15 +120,24 @@ def train_model(model,
                     running_losses[f'{state}_loss_P'] += pres_loss.item()*data.cell_pressures.size(0)
                     n_samples[f'{state}_loss_P'] += data.cell_pressures.size(0)
 
+            loss_sum_categories = 0
             for k in loss_categories:
                 # log losses for dataset==state
-                if n_samples[f'{state}_loss_{k}'] < 1:
+                if (n_samples[f'{state}_loss_{k}'] < 1) or (k == 'tot'):
                     # print(f"{state}_loss_{k}=NA",end='; ')
                     continue
                 train_log[f'{state}_loss_{k}'].append(
                  running_losses[f'{state}_loss_{k}']/n_samples[f'{state}_loss_{k}'])
+
+                # accumulate total loss
+                loss_sum_categories += running_losses[f'{state}_loss_{k}']/n_samples[f'{state}_loss_{k}']
                 # print all losses for 'train' and only total loss for others.
-                if state != 'train' and k != 'tot':
+            
+            train_log[f'{state}_loss_tot'].append(loss_sum_categories)
+            
+            # print losses
+            for k in loss_categories:
+                if (state != 'train' and k != 'tot') or (n_samples[f'{state}_loss_{k}'] < 1 and k != 'tot'):
                     continue
                 print(f"{state}_loss_{k}={train_log[f'{state}_loss_{k}'][-1]:8.4g}", end='; ')
             print('|', end='')
@@ -246,6 +255,7 @@ def predict_batch(model, data_loaders,
         loss_names = [f"{name}_loss_{k}" for name in data_loaders for k in loss_categories]
         running_losses = {k: 0.0 for k in loss_names}
         n_samples = {k: 0.0 for k in loss_names}
+        loss_log = {k: 0.0 for k in loss_names}
 
     # predcitions
     X_vel_datasets = {name: [] for name in data_loaders}
@@ -275,14 +285,14 @@ def predict_batch(model, data_loaders,
 
             # loss tracking
             if return_losses:
-                (vel_loss, tens_loss, pres_loss, tot_loss) = losses
+                vel_loss, tens_loss, pres_loss, _ = losses
                 # accumulate losses
                 running_losses[f'{name}_loss_y'] += vel_loss.item()*data.x.size(0) if data.y is not None else 0.0
                 n_samples[f'{name}_loss_y'] += data.x.size(0)
 
                 # total loss values weighted by #nodes in each graph batch
-                running_losses[f'{name}_loss_tot'] += tot_loss.item()*data.x.size(0)
-                n_samples[f'{name}_loss_tot'] += data.x.size(0)
+                #running_losses[f'{name}_loss_tot'] += tot_loss.item()*data.x.size(0)
+                #n_samples[f'{name}_loss_tot'] += data.x.size(0)
 
                 if use_force_loss[name][0]:
                     running_losses[f'{name}_loss_T'] += tens_loss.item()*data.edge_tensions.size(0)
@@ -293,14 +303,21 @@ def predict_batch(model, data_loaders,
                     n_samples[f'{name}_loss_P'] += data.cell_pressures.size(0)
         # compute mean losses
         if return_losses:
+            loss_sum_categories = 0
             for k in loss_categories:
-                if n_samples[f'{name}_loss_{k}'] < 1:
+                if k=='tot':
+                    continue
+                elif n_samples[f'{name}_loss_{k}'] < 1:
                     running_losses[f'{name}_loss_{k}'] = None
                     continue
-                running_losses[f'{name}_loss_{k}'] = running_losses[f'{name}_loss_{k}']/n_samples[f'{name}_loss_{k}']
+                loss_log[f'{name}_loss_{k}'] = running_losses[f'{name}_loss_{k}']/n_samples[f'{name}_loss_{k}']
+                # accumulate total loss
+                loss_sum_categories += running_losses[f'{name}_loss_{k}']/n_samples[f'{name}_loss_{k}']
+            
+            loss_log[f'{name}_loss_tot'] = loss_sum_categories
 
     if return_losses:
-        return (X_vel_datasets, E_tens_datasets, C_pres_datasets), (X_vel_targets, E_tens_targets, C_pres_targets), running_losses
+        return (X_vel_datasets, E_tens_datasets, C_pres_datasets), (X_vel_targets, E_tens_targets, C_pres_targets), loss_log
 
     return (X_vel_datasets, E_tens_datasets, C_pres_datasets), (X_vel_targets, E_tens_targets, C_pres_targets)
 
