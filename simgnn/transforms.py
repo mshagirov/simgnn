@@ -36,21 +36,49 @@ class AppendReversedEdges(object):
 
 class AppendEdgeNorm(object):
     '''
-    Appends norms of `data.edge_attr` vectors to the end of `data.edge_attr`. Assumes `data.edge_attr.dim()`>1.
-
-    `cat([data.edge_attr, norms])-->data.edge_attr`
+    Appends norms of the first N_dim columns of `data.edge_attr` vectors to the end of `data.edge_attr`.
+    
+    `data.edge_attr = cat([data.edge_attr, norm(data.edge_attr[:,[0,1]])])`
     '''
-    def __init__(self):
-        pass
+    def __init__(self, N_dim=2):
+        self.N_dim = N_dim
+        self.cols = list(range(N_dim))
 
     def __call__(self, data):
-        data.edge_attr = torch.cat([data.edge_attr, torch.linalg.norm(data.edge_attr, dim=1, keepdim=True)], dim=-1)
+        # calculate norm using first two col-s of data.edge_attr
+        data.edge_attr = torch.cat([data.edge_attr,
+                                    torch.linalg.norm(data.edge_attr[:, self.cols], dim=1, keepdim=True)], dim=-1).contiguous()
         return data
 
     def __repr__(self):
-        return '{}()'.format(self.__class__.__name__)
+        return '{}(N_dim={})'.format(self.__class__.__name__, self.N_dim)
 
 
+class AppendDiff_x(object):
+    '''
+    Appends x_t-x_s and their Euclidean norms (optional, if `norm=True`).
+    '''
+    def __init__(self, norm=True):
+        '''Appends Euclidean if `norm=True`'''
+        self.norm = norm
+
+    def __call__(self, data):
+        # src to tgt vectors x_t-x_s; Nx(window_size)x2
+        e_vec = data.x[data.edge_index[1]] - data.x[data.edge_index[0]]
+
+        # append norms of x_t-x_s
+        if self.norm:
+            e_vec = torch.cat([e_vec, torch.linalg.norm(e_vec, dim=-1, keepdim=True)], dim=-1)
+
+        # flatten and append to data.edge_attr
+        data.edge_attr = torch.cat([data.edge_attr,
+                                    e_vec.reshape(e_vec.size(0), -1)], dim=-1).contiguous()
+        return data
+
+    def __repr__(self):
+        return '{}(norm={})'.format(self.__class__.__name__, self.norm)
+
+    
 class AppendEdgeDir(object):
     '''
     Computes edge directions, (spatial) unit vectors from `src`
@@ -105,8 +133,8 @@ class Pos2Vec(object):
             e_vec = e_vec / scale if (scale > 0) else e_vec
 
         if data.edge_attr is not None and self.cat:
-            data.edge_attr = data.edge_attr.view(-1, 1) if data.edge_attr.dim() == 1 else data.edge_attr
-            data.edge_attr = torch.cat([data.edge_attr, e_vec.type_as(data.edge_attr)], dim=-1)
+            data.edge_attr = data.edge_attr.view(-1, 1).contiguous() if data.edge_attr.dim() == 1 else data.edge_attr
+            data.edge_attr = torch.cat([data.edge_attr, e_vec.type_as(data.edge_attr)], dim=-1).contiguous()
         else:
             data.edge_attr = e_vec
 
@@ -268,7 +296,7 @@ class Reshape_x(object):
         '''
         - data : an input graph.
         '''
-        data.x = data.x.reshape(self.shape)
+        data.x = data.x.reshape(self.shape).contiguous()
         return data
 
     def __repr__(self):
