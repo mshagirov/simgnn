@@ -409,9 +409,9 @@ def plot_velocity_predictions(vel_pred, vel_tgt, dataset_legend,
         minY, maxY = torch.cat(vel_tgt[data_name], dim=0).min(), torch.cat(vel_tgt[data_name], dim=0).max()
         fig, axs = plt.subplots(nrows=1, ncols=2, sharex=True, sharey=True, figsize=figsize)
         for k, ax in enumerate(axs):
-            ax.plot([minY, maxY], [minY, maxY], '--', color='b', lw=3, alpha=.5)
             ax.plot(torch.cat(vel_tgt[data_name], dim=0)[:, k],
                     torch.cat(vel_pred[data_name], dim=0)[:, k], 'o', ms=10, mfc='tomato', alpha=.25)
+            ax.plot([minY, maxY], [minY, maxY], '--', color='b', lw=3, alpha=.25)
             ax.set_xlabel('True')
             ax.set_ylabel('Predicted')
             ax.set_title(f'{var_name}$_{k}$')
@@ -420,7 +420,7 @@ def plot_velocity_predictions(vel_pred, vel_tgt, dataset_legend,
 
 
 def plot_tension_prediction(t_pred, t_tgt, dataset_legend,
-                            nrows=1, ncols=3, figsize=[23, 7]):
+                            nrows=1, ncols=3, figsize=[23, 7], return_axs=True):
     '''Concatenate all batches and plot scatter plot target vs predicted tension values'''
     data_names = [e for e in t_tgt if len(t_tgt[e]) > 1]
     fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize)
@@ -431,13 +431,15 @@ def plot_tension_prediction(t_pred, t_tgt, dataset_legend,
 
         minY, maxY = t_tgt_i[t_mask].min(), t_tgt_i[t_mask].max()
 
-        ax.plot([minY, maxY], [minY, maxY], '--', color='orange', lw=3, alpha=.8)
         ax.plot(t_tgt_i[t_mask],
                 torch.cat(t_pred[data_name], dim=0)[t_mask], 'o',
-                ms=10, c='c', mfc='teal', alpha=.2)
+                ms=10, mfc='darkorange', alpha=.25)
+        ax.plot([minY, maxY], [minY, maxY], '--', color='teal', lw=3, alpha=.5)
 
         ax.set_xlabel('True')
         ax.set_ylabel('Predicted')
         ax.set_title(f'{dataset_legend[data_name]}')
     plt.suptitle('Tension')
+    if return_axs:
+        return axs
     plt.show()
