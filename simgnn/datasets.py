@@ -29,11 +29,12 @@ def persistence_loss(graph_dataset):
 
 class CellData(Data):
     '''Cell monolayer graph data object. Same as `Data` but with cells.'''
-    def __init__(self, y_cell=None, num_cells=None,
+    def __init__(self, y_cell=None, num_cells=None, edge_id=None,
                  node2cell_index=None, cell2node_index=None, **kwargs):
         super(CellData, self).__init__(**kwargs)
         self.node2cell_index = node2cell_index
         self.cell2node_index = cell2node_index
+        self.edge_id = edge_id
         self.y_cell = y_cell
         self.__num_cells__ = num_cells
 
@@ -57,6 +58,8 @@ class CellData(Data):
             return torch.tensor([[self.num_nodes], [self.num_cells]])
         if key == 'cell2node_index':
             return torch.tensor([[self.num_cells], [self.num_nodes]])
+        if key == 'edge_id':
+            return torch.unique(self.edge_id).size(0)
         else:
             return super(CellData, self).__inc__(key, value)
 
