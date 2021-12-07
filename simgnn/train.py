@@ -208,6 +208,80 @@ def plot_losses(train_log, loaders, dataset_legend, figsize=[15, 8],
         return axs
 
 
+@torch.no_grad()
+def predict_sample(model, input_data, device=torch.device('cpu')):
+    '''
+    Use model.training, model.eval(), and model.train() to set and reset the training mode before
+    using `predict_sample()`.
+    
+    - model :  `torch.nn` model.
+    - input_data : a pt-geometric graph data compatible w/ the `model`.
+    - device : target device for the input_data (must be same device as the model).
+    '''
+    return model(input_data.to(device))
+
+
+def predict_dataset_tension(model, input_dataset, device=torch.device('cpu')):
+    '''
+    - input_dataset : pt-geometric dataset compatible with the `model`
+    - device : device for the graph data, must be same device as the `model`.
+    
+    Returns (tens_pred, tens_gt), if the data *doesn't contain* `is_rosette` labels
+        tens_pred, tens_gt : predicted and target tensions; lists of np.arrays, where each list elem-t
+                             represents a single graph.
+    
+    Returns (tens_pred, tens_gt, is_rosette), if the data contains rosette labels:
+        tens_pred, tens_gt, is_rosette: predicted and target tensions, and `np.bool` array with rosette
+                                        labels (used for Hara's ablation data)
+    '''
+    tens_gt = []
+    tens_pred = []
+    contains_rosette = False
+    
+    if 'is_rosette' in input_dataset[0]:
+        # contains rosette labels
+        is_rosette = np.zeros((len(input_dataset),), dtype=np.bool_)
+        contains_rosette = True
+    
+    is_train_mode = model.training
+    if is_train_mode:
+        model.eval();
+    
+    for k, d_k in enumerate(input_dataset):
+        _, Tp_k,_ = predict_sample(model, d_k, device=device)
+
+        # targets
+        tens_gt.append(d_k.edge_tensions.cpu().numpy().reshape(1,-1))
+
+        # predictions
+        tens_pred.append(Tp_k.to('cpu').numpy().reshape(1,-1))
+
+        if contains_rosette:
+            is_rosette[k] = d_k.is_rosette
+    
+    if is_train_mode:
+        model.train();
+    if contains_rosette:
+        return tens_pred, tens_gt, is_rosette
+
+    return tens_pred, tens_gt
+
+
+def predict_abln_tension(model, abln_dataset, device=torch.device('cpu')):
+    '''
+    Predicts Hara ablation edge tensions.
+    
+    Returns: tens_pred, recoils, is_rosette
+    '''
+    Tp, Tt, is_ros_ = predict_dataset_tension(model, abln_dataset, device=device)
+    for k, (Tp_k, Tt_k) in enumerate(zip(Tp,Tt)):
+        Tp[k] = Tp_k[~np.isnan(Tt_k)]
+        Tt[k] = Tt_k[~np.isnan(Tt_k)]
+    return np.concatenate(Tp), np.concatenate(Tt), is_ros_
+
+
+
+# need to chack following func-s:
 def predict(model, input_data, loss_func=l1_loss,
             use_force_loss=[True, True],
             return_losses=True,
