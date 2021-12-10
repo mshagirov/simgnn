@@ -93,9 +93,8 @@ def train_model(model,
                     vel_loss = loss_func(X_vel, data.y) if data.y is not None else 0.0
 
                     # ignore NaN targets
-                    tens_mask = torch.logical_not(data.edge_tensions.isnan()) if use_force_loss[state][0] else None
-                    tens_loss = loss_func(E_tens[tens_mask],
-                                          data.edge_tensions[tens_mask]) if use_force_loss[state][0] else 0.0
+                    tens_compute_loss = use_force_loss[state][0] and (not torch.any(data.edge_tensions.isnan()).item())
+                    tens_loss = loss_func(E_tens, data.edge_tensions) if tens_compute_loss else 0.0
                     pres_loss = loss_func(C_pres, data.cell_pressures) if use_force_loss[state][1] else 0.0
 
                     # total loss
@@ -112,7 +111,7 @@ def train_model(model,
                 # running_losses[f'{state}_loss_tot'] += loss.item()*data.x.size(0)
                 # n_samples[f'{state}_loss_tot'] += data.x.size(0)
 
-                if use_force_loss[state][0]:
+                if tens_compute_loss:
                     running_losses[f'{state}_loss_T'] += tens_loss.item()*data.edge_tensions.size(0)
                     n_samples[f'{state}_loss_T'] += data.edge_tensions.size(0)
 
