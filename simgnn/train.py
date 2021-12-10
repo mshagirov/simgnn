@@ -422,7 +422,7 @@ def plot_tension_prediction(t_pred, t_tgt, dataset_legend,
                             nrows=1, ncols=3, figsize=[23, 7], return_axs=True):
     '''Concatenate all batches and plot scatter plot target vs predicted tension values'''
     data_names = [e for e in t_tgt if len(t_tgt[e]) > 1]
-    fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize)
+    fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize, sharey=True)
     axs = axs.ravel()
     for data_name, ax in zip(data_names, axs):
         t_tgt_i = torch.cat(t_tgt[data_name], dim=0)
