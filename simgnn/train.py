@@ -227,15 +227,15 @@ def predict_dataset_tension(model, input_dataset, device=torch.device('cpu')):
     - input_dataset : pt-geometric dataset compatible with the `model`
     - device : device for the graph data, must be same device as the `model`.
     
-    Returns (tens_pred, tens_gt), if the data *doesn't contain* `is_rosette` labels
-        tens_pred, tens_gt : predicted and target tensions; lists of np.arrays, where each list elem-t
+    Returns (tens_pred, tens_tgt), if the data *doesn't contain* `is_rosette` labels
+        tens_pred, tens_tgt : predicted and target tensions; lists of np.arrays, where each list elem-t
                              represents a single graph.
     
-    Returns (tens_pred, tens_gt, is_rosette), if the data contains rosette labels:
-        tens_pred, tens_gt, is_rosette: predicted and target tensions, and `np.bool` array with rosette
+    Returns (tens_pred, tens_tgt, is_rosette), if the data contains rosette labels:
+        tens_pred, tens_tgt, is_rosette: predicted and target tensions, and `np.bool` array with rosette
                                         labels (used for Hara's ablation data)
     '''
-    tens_gt = []
+    tens_tgt = []
     tens_pred = []
     contains_rosette = False
     
@@ -252,7 +252,7 @@ def predict_dataset_tension(model, input_dataset, device=torch.device('cpu')):
         _, Tp_k,_ = predict_sample(model, d_k, device=device)
 
         # targets
-        tens_gt.append(d_k.edge_tensions.cpu().numpy().reshape(1,-1))
+        tens_tgt.append(d_k.edge_tensions.cpu().numpy().reshape(1,-1))
 
         # predictions
         tens_pred.append(Tp_k.to('cpu').numpy().reshape(1,-1))
@@ -263,9 +263,58 @@ def predict_dataset_tension(model, input_dataset, device=torch.device('cpu')):
     if is_train_mode:
         model.train();
     if contains_rosette:
-        return tens_pred, tens_gt, is_rosette
+        return tens_pred, tens_tgt, is_rosette
 
-    return tens_pred, tens_gt
+    return tens_pred, tens_tgt
+
+
+def predict_dataset(model, input_dataset, device=torch.device('cpu')):
+    '''
+    A simple "For loop" through the dataset.
+    
+    Arg-s:
+        - input_dataset : pt-geometric dataset compatible with the `model`
+        - device : device for the graph data, must be same device as the `model`.
+    
+    Returns: dict w/ keys 'predictions' and 'targets', which have values as follows,
+        - predictions: dict of predictions, w/ keys ['tension', 'velocity'].
+        - targets: dict of target/ground truth values w/ ['tension', 'velocity']. If the
+                   dataset containes 'is_rosette' property then `targets` has three keys
+                   ['tension', 'velocity', 'is_rosette'].
+    '''
+    results_ = {}
+    results_['predictions'] = {'tension':[], 'velocity':[]}
+    results_['targets'] = {'tension':[], 'velocity':[]}
+    
+    contains_rosette = False
+    
+    if 'is_rosette' in input_dataset[0]:
+        # contains rosette labels
+        results_['targets']['is_rosette'] = np.zeros((len(input_dataset),), dtype=np.bool_)
+        contains_rosette = True
+    
+    is_train_mode = model.training # remember the current model state
+    if is_train_mode:
+        model.eval();
+    
+    for k, d_k in enumerate(input_dataset):
+        Vp_k, Tp_k,_ = predict_sample(model, d_k, device=device)
+
+        # targets
+        results_['targets']['velocity'].append(d_k.y.cpu().numpy().reshape(1,-1,2))
+        results_['targets']['tension'].append(d_k.edge_tensions.cpu().numpy().reshape(1,-1))
+
+        # predictions
+        results_['predictions']['velocity'].append(Vp_k.cpu().numpy().reshape(1,-1,2))
+        results_['predictions']['tension'].append(Tp_k.cpu().numpy().reshape(1,-1))
+
+        if contains_rosette:
+            results_['targets']['is_rosette'][k] = d_k.is_rosette
+    
+    if is_train_mode:
+        model.train();
+
+    return results_
 
 
 def predict_abln_tension(model, abln_dataset, device=torch.device('cpu')):
@@ -281,10 +330,7 @@ def predict_abln_tension(model, abln_dataset, device=torch.device('cpu')):
     return np.concatenate(Tp), np.concatenate(Tt), is_ros_
 
 
-
-# need to check following func-s:
-#
-#
+# predict using for pt-geometric batches
 def predict(model, input_data, loss_func=l1_loss,
             use_force_loss=True,
             return_losses=True,
