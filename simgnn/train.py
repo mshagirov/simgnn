@@ -268,13 +268,14 @@ def predict_dataset_tension(model, input_dataset, device=torch.device('cpu')):
     return tens_pred, tens_tgt
 
 
-def predict_dataset(model, input_dataset, device=torch.device('cpu')):
+def predict_dataset(model, input_dataset, device=torch.device('cpu'), concat=False):
     '''
     A simple "For loop" through the dataset.
     
     Arg-s:
         - input_dataset : pt-geometric dataset compatible with the `model`
         - device : device for the graph data, must be same device as the `model`.
+        - concat : concartenates "velocity" and "tensions" as frames if `concat=True`.
     
     Returns: dict w/ keys 'predictions' and 'targets', which have values as follows,
         - predictions: dict of predictions, w/ keys ['tension', 'velocity'].
@@ -311,6 +312,12 @@ def predict_dataset(model, input_dataset, device=torch.device('cpu')):
         if contains_rosette:
             results_['targets']['is_rosette'][k] = d_k.is_rosette
     
+    if concat:
+        results_['targets']['velocity'] = np.concatenate(results_['targets']['velocity'], axis=0)
+        results_['targets']['tension'] = np.concatenate(results_['targets']['tension'], axis=0)
+        results_['predictions']['velocity'] = np.concatenate(results_['predictions']['velocity'], axis=0)
+        results_['predictions']['tension'] = np.concatenate(results_['predictions']['tension'], axis=0)
+        
     if is_train_mode:
         model.train();
 
