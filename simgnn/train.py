@@ -19,6 +19,8 @@ def train_model(model,
                 model_states=['train', 'val', 'hara'],
                 loss_func=l1_loss,
                 use_force_loss={'train': [True, True], 'val': [True, True], 'hara': [False, False]},
+                ignore_short_edges=False,
+                edge_len_threshold=10**-4 ,
                 return_best=False):
     '''
     Arg-s:
@@ -32,6 +34,7 @@ def train_model(model,
     - loss_func : loss function for training w/ reduction='mean'. Same loss function is
                   used for all var types (i.e. node, edge, cell).
                   Total batch losses are weighted by #nodes in each batch.
+    - ignore_short_edges : loss and gradients are not computed for edges with lengths shorter than the `edge_len_threshold`.
     - use_force_loss: dict of states (from `model_states`) w/ lists of Booleans ([Tension, Pressure])
                       for deciding whether to compute loss for a variable. Order of the Booleans in the
                       list are as follows: `use_force_loss[state] = [tension, pressure]`.
@@ -94,7 +97,13 @@ def train_model(model,
 
                     # ignore NaN targets
                     tens_compute_loss = use_force_loss[state][0] and (not torch.any(data.edge_tensions.isnan()).item())
-                    tens_loss = loss_func(E_tens, data.edge_tensions) if tens_compute_loss else 0.0
+                    if tens_compute_loss and ignore_short_edges:
+                        edge_mask = data.edge_length > edge_len_threshold
+                        tens_loss = loss_func(E_tens[edge_mask], data.edge_tensions[edge_mask])
+                    elif tens_compute_loss:
+                        tens_loss = loss_func(E_tens, data.edge_tensions)
+                    else:
+                        tens_loss = 0.0
                     pres_loss = loss_func(C_pres, data.cell_pressures) if use_force_loss[state][1] else 0.0
 
                     # total loss

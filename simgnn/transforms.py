@@ -83,11 +83,18 @@ class AppendEdgeDir(object):
     '''
     Computes edge directions, (spatial) unit vectors from `src`
     to `tgt` vertices (i.e. `src, tgt = data.edge_index`), and appends them as
-    a new graph variable `data.edge_dir`.
-
-    Uses `data.edge_attr` as edge vectors (if `use_edge_attr=True`) instead of computing them.
+    a new graph variable `data.edge_dir`. 
+    
+    Agr-s:
+        keep_dir : if true, appends computed edge directions as `data.edge_dir`.
+        aggr_edge_id : if true and `edge_id!=None`uses edge ids to compute a single direction
+                       (src-tgt) for edge lengths since both direction (src-tgt, tgt-src) have
+                       the same lengths.
+        use_edge_attr : if true uses `data.edge_attr` as edge vectors instead of computing them from `pos`.
     '''
-    def __init__(self, use_edge_attr=False):
+    def __init__(self, keep_dir=True, aggr_edge_id=True, use_edge_attr=False):
+        self.keep_dir = keep_dir
+        self.aggr_edge_id = aggr_edge_id
         self.use_edge_attr = use_edge_attr
 
     def __call__(self, data):
@@ -96,12 +103,20 @@ class AppendEdgeDir(object):
         else:
             row, col = data.edge_index  # src, tgt indices
             e_vec = data.pos[col] - data.pos[row]  # src to tgt vectors
+        edge_length = torch.linalg.norm(e_vec, dim=1, keepdim=True)
 
-        data.edge_dir = e_vec/torch.linalg.norm(e_vec, dim=1, keepdim=True)
+        if self.keep_dir:
+            data.edge_dir = e_vec/edge_length
+        if self.aggr_edge_id and (data.edge_id is not None):
+            data.edge_length = edge_length[torch.unique(data.edge_id)].reshape(-1,)
+        elif self.aggr_edge_id and (data.edge_id is None):
+            data.edge_length = edge_length
+
         return data
 
     def __repr__(self):
-        return '{}(use_edge_attr={})'.format(self.__class__.__name__, self.use_edge_attr)
+        return '{}(keep_dir={}, aggr_edge_id={}, use_edge_attr={})'.format(
+            self.__class__.__name__, self.keep_dir, self.aggr_edge_id,self.use_edge_attr)
 
 
 class Pos2Vec(object):
