@@ -79,44 +79,59 @@ class AppendDiff_x(object):
         return '{}(norm={})'.format(self.__class__.__name__, self.norm)
 
     
-class AppendEdgeDir(object):
+class AppendEdgeLen(object):
     '''
-    Computes edge directions, (spatial) unit vectors from `src`
-    to `tgt` vertices (i.e. `src, tgt = data.edge_index`), and appends them as
-    a new graph variable `data.edge_dir`. 
+    Computes edge lengths, and optionally directions, then appends them as
+    a new graph variable(s) `data.edge_length` (, `data.edge_dir`). Directions
+    are unit vectors from `src` to `tgt` vertices, i.e. `src, tgt = data.edge_index`. 
     
     Agr-s:
-        keep_dir : if true, appends computed edge directions as `data.edge_dir`.
+        keep_dir : if true, appends computed edge directions as `data.edge_dir` (doesn't use ).
         aggr_edge_id : if true and `edge_id!=None`uses edge ids to compute a single direction
                        (src-tgt) for edge lengths since both direction (src-tgt, tgt-src) have
                        the same lengths.
         use_edge_attr : if true uses `data.edge_attr` as edge vectors instead of computing them from `pos`.
     '''
-    def __init__(self, keep_dir=True, aggr_edge_id=True, use_edge_attr=False):
+    def __init__(self, keep_dir=False, aggr_edge_id=True, use_edge_attr=False,
+                 norm=False, scale=None):
         self.keep_dir = keep_dir
         self.aggr_edge_id = aggr_edge_id
         self.use_edge_attr = use_edge_attr
+        self.norm = norm
+        self.scale = scale
 
     def __call__(self, data):
+        # compute edge vectors
         if self.use_edge_attr:
             e_vec = data.edge_attr
         else:
             row, col = data.edge_index  # src, tgt indices
             e_vec = data.pos[col] - data.pos[row]  # src to tgt vectors
-        edge_length = torch.linalg.norm(e_vec, dim=1, keepdim=True)
 
-        if self.keep_dir:
-            data.edge_dir = e_vec/edge_length
+        # normalise if `norm` is True
+        if self.norm and (e_vec.numel() > 0):
+            scale = e_vec.abs().max() if (self.scale is None) else self.scale
+            e_vec = e_vec / (scale+10**-9)
+        
+        edge_length = torch.linalg.norm(e_vec, dim=1, keepdim=True)
+            
         if self.aggr_edge_id and (data.edge_id is not None):
             data.edge_length = edge_length[torch.unique(data.edge_id)].reshape(-1,)
-        elif self.aggr_edge_id and (data.edge_id is None):
+            if self.keep_dir:
+                # compute unit vectors for edge directions
+                data.edge_dir = e_vec[torch.unique(data.edge_id)]/edge_length[torch.unique(data.edge_id)]
+        else:
             data.edge_length = edge_length
+            if self.keep_dir:
+                # compute unit vectors for edge directions
+                data.edge_dir = e_vec/edge_length
 
         return data
 
     def __repr__(self):
-        return '{}(keep_dir={}, aggr_edge_id={}, use_edge_attr={})'.format(
-            self.__class__.__name__, self.keep_dir, self.aggr_edge_id,self.use_edge_attr)
+        return '{}(keep_dir={}, aggr_edge_id={}, use_edge_attr={}, norm={}, scale={})'.format(
+            self.__class__.__name__, self.keep_dir, self.aggr_edge_id,self.use_edge_attr,
+            self.norm, self.scale)
 
 
 class Pos2Vec(object):

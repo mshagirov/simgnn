@@ -219,6 +219,8 @@ def plot_losses(train_log, loaders, dataset_legend, figsize=[15, 8],
 @torch.no_grad()
 def predict_sample(model, input_data, device=torch.device('cpu')):
     '''
+    Processes a single sample w/ enabled torch.no_grad().
+    
     Use model.training, model.eval(), and model.train() to set and reset the training mode before
     using `predict_sample()`.
     
@@ -484,7 +486,7 @@ def plot_tension_prediction(t_pred, t_tgt, dataset_legend,
                             nrows=1, ncols=3, figsize=[23, 7], return_axs=True):
     '''Concatenate all batches and plot scatter plot target vs predicted tension values'''
     data_names = [e for e in t_tgt if len(t_tgt[e]) > 1]
-    fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize, sharey=True)
+    fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize)
     axs = axs.ravel()
     for data_name, ax in zip(data_names, axs):
         t_tgt_i = torch.cat(t_tgt[data_name], dim=0)
@@ -499,6 +501,8 @@ def plot_tension_prediction(t_pred, t_tgt, dataset_legend,
 
         ax.set_xlabel('True')
         ax.set_ylabel('Predicted')
+        if ax is not axs[0]:
+            ax.sharey(axs[0])
         ax.set_title(f'{dataset_legend[data_name]}')
     plt.suptitle('Tension')
     if return_axs:
