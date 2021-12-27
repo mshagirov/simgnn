@@ -20,7 +20,7 @@ def train_model(model,
                 loss_func=l1_loss,
                 use_force_loss={'train': [True, True], 'val': [True, True], 'hara': [False, False]},
                 ignore_short_edges=False,
-                edge_len_threshold=10**-4 ,
+                edge_len_threshold=10**-4,
                 return_best=False):
     '''
     Arg-s:
@@ -34,7 +34,8 @@ def train_model(model,
     - loss_func : loss function for training w/ reduction='mean'. Same loss function is
                   used for all var types (i.e. node, edge, cell).
                   Total batch losses are weighted by #nodes in each batch.
-    - ignore_short_edges : loss and gradients are not computed for edges with lengths shorter than the `edge_len_threshold`.
+    - ignore_short_edges : loss and gradients are not computed for edges with lengths
+                           shorter than the `edge_len_threshold`.
     - use_force_loss: dict of states (from `model_states`) w/ lists of Booleans ([Tension, Pressure])
                       for deciding whether to compute loss for a variable. Order of the Booleans in the
                       list are as follows: `use_force_loss[state] = [tension, pressure]`.
@@ -140,9 +141,9 @@ def train_model(model,
                 # accumulate total loss
                 loss_sum_categories += running_losses[f'{state}_loss_{k}']/n_samples[f'{state}_loss_{k}']
                 # print all losses for 'train' and only total loss for others.
-            
+
             train_log[f'{state}_loss_tot'].append(loss_sum_categories)
-            
+
             # print losses
             for k in loss_categories:
                 if (state != 'train' and k != 'tot') or (n_samples[f'{state}_loss_{k}'] < 1 and k != 'tot'):
@@ -220,10 +221,10 @@ def plot_losses(train_log, loaders, dataset_legend, figsize=[15, 8],
 def predict_sample(model, input_data, device=torch.device('cpu')):
     '''
     Processes a single sample w/ enabled torch.no_grad().
-    
+
     Use model.training, model.eval(), and model.train() to set and reset the training mode before
     using `predict_sample()`.
-    
+
     - model :  `torch.nn` model.
     - input_data : a pt-geometric graph data compatible w/ the `model`.
     - device : target device for the input_data (must be same device as the model).
@@ -237,11 +238,11 @@ def predict_dataset_tension(model, input_dataset, device=torch.device('cpu')):
 
     - input_dataset : pt-geometric dataset compatible with the `model`
     - device : device for the graph data, must be same device as the `model`.
-    
+
     Returns (tens_pred, tens_tgt), if the data *doesn't contain* `is_rosette` labels
         tens_pred, tens_tgt : predicted and target tensions; lists of np.arrays, where each list elem-t
                              represents a single graph.
-    
+
     Returns (tens_pred, tens_tgt, is_rosette), if the data contains rosette labels:
         tens_pred, tens_tgt, is_rosette: predicted and target tensions, and `np.bool` array with rosette
                                         labels (used for Hara's ablation data)
@@ -249,30 +250,30 @@ def predict_dataset_tension(model, input_dataset, device=torch.device('cpu')):
     tens_tgt = []
     tens_pred = []
     contains_rosette = False
-    
+
     if 'is_rosette' in input_dataset[0]:
         # contains rosette labels
         is_rosette = np.zeros((len(input_dataset),), dtype=np.bool_)
         contains_rosette = True
-    
+
     is_train_mode = model.training
     if is_train_mode:
-        model.eval();
-    
+        model.eval()
+
     for k, d_k in enumerate(input_dataset):
-        _, Tp_k,_ = predict_sample(model, d_k, device=device)
+        _, Tp_k, _ = predict_sample(model, d_k, device=device)
 
         # targets
-        tens_tgt.append(d_k.edge_tensions.cpu().numpy().reshape(1,-1))
+        tens_tgt.append(d_k.edge_tensions.cpu().numpy().reshape(1, -1))
 
         # predictions
-        tens_pred.append(Tp_k.to('cpu').numpy().reshape(1,-1))
+        tens_pred.append(Tp_k.to('cpu').numpy().reshape(1, -1))
 
         if contains_rosette:
             is_rosette[k] = d_k.is_rosette
-    
+
     if is_train_mode:
-        model.train();
+        model.train()
     if contains_rosette:
         return tens_pred, tens_tgt, is_rosette
 
@@ -282,12 +283,12 @@ def predict_dataset_tension(model, input_dataset, device=torch.device('cpu')):
 def predict_dataset(model, input_dataset, device=torch.device('cpu'), concat=False):
     '''
     A simple "For loop" through the dataset.
-    
+
     Arg-s:
         - input_dataset : pt-geometric dataset compatible with the `model`
         - device : device for the graph data, must be same device as the `model`.
         - concat : concartenates "velocity" and "tensions" as frames if `concat=True`.
-    
+
     Returns: dict w/ keys 'predictions' and 'targets', which have values as follows,
         - predictions: dict of predictions, w/ keys ['tension', 'velocity'].
         - targets: dict of target/ground truth values w/ ['tension', 'velocity']. If the
@@ -295,42 +296,42 @@ def predict_dataset(model, input_dataset, device=torch.device('cpu'), concat=Fal
                    ['tension', 'velocity', 'is_rosette'].
     '''
     results_ = {}
-    results_['predictions'] = {'tension':[], 'velocity':[]}
-    results_['targets'] = {'tension':[], 'velocity':[]}
-    
+    results_['predictions'] = {'tension': [], 'velocity': []}
+    results_['targets'] = {'tension': [], 'velocity': []}
+
     contains_rosette = False
-    
+
     if 'is_rosette' in input_dataset[0]:
         # contains rosette labels
         results_['targets']['is_rosette'] = np.zeros((len(input_dataset),), dtype=np.bool_)
         contains_rosette = True
-    
-    is_train_mode = model.training # remember the current model state
+
+    is_train_mode = model.training  # remember the current model state
     if is_train_mode:
-        model.eval();
-    
+        model.eval()
+
     for k, d_k in enumerate(input_dataset):
-        Vp_k, Tp_k,_ = predict_sample(model, d_k, device=device)
+        Vp_k, Tp_k, _ = predict_sample(model, d_k, device=device)
 
         # targets
-        results_['targets']['velocity'].append(d_k.y.cpu().numpy().reshape(1,-1,2))
-        results_['targets']['tension'].append(d_k.edge_tensions.cpu().numpy().reshape(1,-1))
+        results_['targets']['velocity'].append(d_k.y.cpu().numpy().reshape(1, -1, 2))
+        results_['targets']['tension'].append(d_k.edge_tensions.cpu().numpy().reshape(1, -1))
 
         # predictions
-        results_['predictions']['velocity'].append(Vp_k.cpu().numpy().reshape(1,-1,2))
-        results_['predictions']['tension'].append(Tp_k.cpu().numpy().reshape(1,-1))
+        results_['predictions']['velocity'].append(Vp_k.cpu().numpy().reshape(1, -1, 2))
+        results_['predictions']['tension'].append(Tp_k.cpu().numpy().reshape(1, -1))
 
         if contains_rosette:
             results_['targets']['is_rosette'][k] = d_k.is_rosette
-    
+
     if concat:
         results_['targets']['velocity'] = np.concatenate(results_['targets']['velocity'], axis=0)
         results_['targets']['tension'] = np.concatenate(results_['targets']['tension'], axis=0)
         results_['predictions']['velocity'] = np.concatenate(results_['predictions']['velocity'], axis=0)
         results_['predictions']['tension'] = np.concatenate(results_['predictions']['tension'], axis=0)
-        
+
     if is_train_mode:
-        model.train();
+        model.train()
 
     return results_
 
@@ -338,45 +339,44 @@ def predict_dataset(model, input_dataset, device=torch.device('cpu'), concat=Fal
 def predict_abln_tension(model, abln_dataset, device=torch.device('cpu')):
     '''
     Predicts Hara ablation edge tensions.
-    
+
     Returns: tens_pred, recoils, is_rosette
     '''
     Tp, Tt, is_ros_ = predict_dataset_tension(model, abln_dataset, device=device)
-    for k, (Tp_k, Tt_k) in enumerate(zip(Tp,Tt)):
+    for k, (Tp_k, Tt_k) in enumerate(zip(Tp, Tt)):
         Tp[k] = Tp_k[~np.isnan(Tt_k)]
         Tt[k] = Tt_k[~np.isnan(Tt_k)]
     return np.concatenate(Tp), np.concatenate(Tt), is_ros_
 
 
 # predict using for pt-geometric batches
+@torch.no_grad()
 def predict(model, input_data, loss_func=l1_loss,
             use_force_loss=True,
             return_losses=True,
             device=torch.device('cpu')):
     '''
     Arg-s: model, input_data, loss_func, device
-
     Returns: outputs, losses
     - outputs : tuple (X_vel, E_tens)
     - losses : tuple (vel_loss, tens_loss) {optional : return_losses=True}
     '''
     input_data = input_data.to(device)
     model.eval()  # evaluation mode
-    with torch.set_grad_enabled(False):
-        X_vel, E_tens, _ = model(input_data)  # shapes: (#nodes/#edges/#cells, #dims)
 
-        if not return_losses:
-            return (X_vel, E_tens), None
+    X_vel, E_tens, C_pres = model(input_data)  # shapes: (#nodes/#edges/#cells, #dims)
 
-        vel_loss = loss_func(X_vel, input_data.y) if input_data.y is not None else 0.0
+    if not return_losses:
+        return (X_vel, E_tens), None
 
-        # tens_mask = torch.logical_not(input_data.edge_tensions.isnan()) if use_force_loss[0] else None
-        tens_loss = loss_func(E_tens, input_data.edge_tensions) if use_force_loss else 0.0
+    vel_loss = loss_func(X_vel, input_data.y) if input_data.y is not None else 0.0
 
-        # pres_loss = loss_func(C_pres, input_data.cell_pressures) if use_force_loss[1] else 0.0
-        # loss = vel_loss + tens_loss # total loss
+    # tens_mask = torch.logical_not(input_data.edge_tensions.isnan()) if use_force_loss[0] else None
+    tens_loss = loss_func(E_tens, input_data.edge_tensions) if use_force_loss else 0.0
 
-    return (X_vel, E_tens), (vel_loss, tens_loss)
+    pres_loss = loss_func(C_pres, input_data.cell_pressures) if (C_pres is not None) else 0.0
+
+    return (X_vel, E_tens, C_pres), (vel_loss, tens_loss, pres_loss)
 
 
 def predict_batch(model, data_loaders,
@@ -392,7 +392,7 @@ def predict_batch(model, data_loaders,
     '''
     # init loss tracking
     if return_losses:
-        loss_categories = ['tot', 'y', 'T']
+        loss_categories = ['tot', 'y', 'T', 'P']
         loss_names = [f"{name}_loss_{k}" for name in data_loaders for k in loss_categories]
         running_losses = {k: 0.0 for k in loss_names}
         n_samples = {k: 0.0 for k in loss_names}
@@ -420,33 +420,33 @@ def predict_batch(model, data_loaders,
                 E_tens_datasets[name].append(outputs[1].cpu())
                 E_tens_targets[name].append(data.edge_tensions.cpu())
 
-            #if (outputs[2] is not None) and (data.cell_pressures is not None):
-            #    C_pres_datasets[name].append(outputs[2].cpu())
-            #    C_pres_targets[name].append(data.cell_pressures.cpu())
+            if (outputs[2] is not None) and (data.cell_pressures is not None):
+                C_pres_datasets[name].append(outputs[2].cpu())
+                C_pres_targets[name].append(data.cell_pressures.cpu())
 
             # loss tracking
             if return_losses:
-                vel_loss, tens_loss = losses
+                vel_loss, tens_loss, pres_loss = losses
                 # accumulate losses
                 running_losses[f'{name}_loss_y'] += vel_loss.item() if data.y is not None else 0.0
                 n_samples[f'{name}_loss_y'] += data.x.size(0)
 
                 # total loss values weighted by #nodes in each graph batch
-                #running_losses[f'{name}_loss_tot'] += tot_loss.item()*data.x.size(0)
-                #n_samples[f'{name}_loss_tot'] += data.x.size(0)
+                # running_losses[f'{name}_loss_tot'] += tot_loss.item()*data.x.size(0)
+                # n_samples[f'{name}_loss_tot'] += data.x.size(0)
 
                 if use_force_loss[name]:
                     running_losses[f'{name}_loss_T'] += tens_loss.item()
                     n_samples[f'{name}_loss_T'] += data.edge_tensions.size(0)
 
-                #if use_force_loss[name][1]:
-                #    running_losses[f'{name}_loss_P'] += pres_loss.item()*data.cell_pressures.size(0)
-                #    n_samples[f'{name}_loss_P'] += data.cell_pressures.size(0)
+                if (outputs[2] is not None) and (data.cell_pressures is not None):
+                    running_losses[f'{name}_loss_P'] += pres_loss.item()*data.cell_pressures.size(0)
+                    n_samples[f'{name}_loss_P'] += data.cell_pressures.size(0)
         # compute mean losses
         if return_losses:
             loss_sum_categories = 0
             for k in loss_categories:
-                if k=='tot':
+                if k == 'tot':
                     continue
                 elif n_samples[f'{name}_loss_{k}'] < 1:
                     running_losses[f'{name}_loss_{k}'] = None
@@ -454,13 +454,14 @@ def predict_batch(model, data_loaders,
                 loss_log[f'{name}_loss_{k}'] = running_losses[f'{name}_loss_{k}']/n_samples[f'{name}_loss_{k}']
                 # accumulate total loss
                 loss_sum_categories += loss_log[f'{name}_loss_{k}']
-            
+
             loss_log[f'{name}_loss_tot'] = loss_sum_categories
 
     if return_losses:
-        return (X_vel_datasets, E_tens_datasets), (X_vel_targets, E_tens_targets), loss_log
+        return (X_vel_datasets, E_tens_datasets, C_pres_datasets), \
+               (X_vel_targets, E_tens_targets, C_pres_targets), loss_log
 
-    return (X_vel_datasets, E_tens_datasets), (X_vel_targets, E_tens_targets)
+    return (X_vel_datasets, E_tens_datasets, C_pres_datasets), (X_vel_targets, E_tens_targets, C_pres_targets)
 
 
 def plot_velocity_predictions(vel_pred, vel_tgt, dataset_legend,

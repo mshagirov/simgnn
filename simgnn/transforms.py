@@ -37,7 +37,7 @@ class AppendReversedEdges(object):
 class AppendEdgeNorm(object):
     '''
     Appends norms of the first N_dim columns of `data.edge_attr` vectors to the end of `data.edge_attr`.
-    
+
     `data.edge_attr = cat([data.edge_attr, norm(data.edge_attr[:,[0,1]])])`
     '''
     def __init__(self, N_dim=2):
@@ -47,7 +47,8 @@ class AppendEdgeNorm(object):
     def __call__(self, data):
         # calculate norm using first two col-s of data.edge_attr
         data.edge_attr = torch.cat([data.edge_attr,
-                                    torch.linalg.norm(data.edge_attr[:, self.cols], dim=1, keepdim=True)], dim=-1).contiguous()
+                                    torch.linalg.norm(data.edge_attr[:, self.cols], dim=1, keepdim=True)
+                                    ], dim=-1).contiguous()
         return data
 
     def __repr__(self):
@@ -78,13 +79,13 @@ class AppendDiff_x(object):
     def __repr__(self):
         return '{}(norm={})'.format(self.__class__.__name__, self.norm)
 
-    
+
 class AppendEdgeLen(object):
     '''
     Computes edge lengths, and optionally directions, then appends them as
     a new graph variable(s) `data.edge_length` (, `data.edge_dir`). Directions
-    are unit vectors from `src` to `tgt` vertices, i.e. `src, tgt = data.edge_index`. 
-    
+    are unit vectors from `src` to `tgt` vertices, i.e. `src, tgt = data.edge_index`.
+
     Agr-s:
         keep_dir : if true, appends computed edge directions as `data.edge_dir` (doesn't use ).
         aggr_edge_id : if true and `edge_id!=None`uses edge ids to compute a single direction
@@ -112,9 +113,9 @@ class AppendEdgeLen(object):
         if self.norm and (e_vec.numel() > 0):
             scale = e_vec.abs().max() if (self.scale is None) else self.scale
             e_vec = e_vec / (scale+10**-9)
-        
+
         edge_length = torch.linalg.norm(e_vec, dim=1, keepdim=True)
-            
+
         if self.aggr_edge_id and (data.edge_id is not None):
             data.edge_length = edge_length[torch.unique(data.edge_id)].reshape(-1,)
             if self.keep_dir:
@@ -130,7 +131,7 @@ class AppendEdgeLen(object):
 
     def __repr__(self):
         return '{}(keep_dir={}, aggr_edge_id={}, use_edge_attr={}, norm={}, scale={})'.format(
-            self.__class__.__name__, self.keep_dir, self.aggr_edge_id,self.use_edge_attr,
+            self.__class__.__name__, self.keep_dir, self.aggr_edge_id, self.use_edge_attr,
             self.norm, self.scale)
 
 
