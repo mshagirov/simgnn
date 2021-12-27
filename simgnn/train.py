@@ -10,6 +10,19 @@ mse_loss = torch.nn.MSELoss(reduction='mean')
 l1_loss = torch.nn.L1Loss(reduction='mean')
 
 
+def np_loss_wrt_time(pred, tgt, loss_type='mse'):
+    '''Calculate loss averaged over axis=0 (time) for `np.ndarray`'''
+    assert loss_type in ('mse', 'l1')
+    if loss_type == 'mse':
+        ls = (pred - tgt)**2
+    elif loss_type == 'l1':
+        ls = np.abs(pred-tgt)
+    if pred.ndim > 2:
+        # for var-s with >1 dim-s, e.g. velocity, position, etc.
+        ls = ls.sum(axis=-1)
+    return ls.mean(axis=0)
+
+
 def train_model(model,
                 data_loaders,
                 optimizer,
@@ -467,7 +480,7 @@ def predict_batch(model, data_loaders,
 def plot_velocity_predictions(vel_pred, vel_tgt, dataset_legend,
                               figsize=[15, 7]):
     '''Concatenate all batches and plot scatter plot target vs predicted velocity values'''
-    var_name = '$\Delta{}x$'
+    var_name = r'$\Delta{}x$'
     data_names = [e for e in vel_tgt if len(vel_tgt[e]) > 1]
     for data_name in data_names:
         minY, maxY = torch.cat(vel_tgt[data_name], dim=0).min(), torch.cat(vel_tgt[data_name], dim=0).max()
