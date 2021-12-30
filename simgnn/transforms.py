@@ -137,7 +137,8 @@ class AppendEdgeLen(object):
 
 class Pos2Vec(object):
     '''Computes edge directions from connected node positions (source to target).'''
-    def __init__(self, norm=True, scale=None, cat=False):
+    def __init__(self, norm=True, scale=None, cat=False, pos_noise=None,
+                 noise_args=[], noise_kwargs={}):
         '''
         Arg-s:
         - norm : if True, normalises/scales edge vectors (uses `scale` or maximum
@@ -146,24 +147,35 @@ class Pos2Vec(object):
                  by this value.
         - cat : if True, concatenates edge vectors to edge attr-s, otherwise
                 replaces current edge attr-s {default : False}.
+        - pos_noise : a function for producing an additive position noise (e.g. torch.normal);
+                      must accept "size=" kwarg.
         '''
         self.norm = norm
         self.scale = scale
         self.cat = cat
+        self.pos_noise = pos_noise
+        self.noise_args = noise_args
+        self.noise_kwargs = noise_kwargs
 
     def __call__(self, data):
         '''
         - data : input graphs (must contain node positions in `data.pos`)
         '''
         row, col = data.edge_index  # src, tgt indices
+        pos = data.pos.detach().clone()
 
-        e_vec = data.pos[col] - data.pos[row]  # src to tgt vectors
+        if self.pos_noise != None:
+            pos = pos + self.pos_noise(*self.noise_args,
+                                       **self.noise_kwargs,
+                                       size=pos.size())
+            
+        e_vec = pos[col] - pos[row]  # src to tgt vectors
 
         if self.norm and (e_vec.numel() > 0):
             scale = e_vec.abs().max() if (self.scale is None) else self.scale
             e_vec = e_vec / scale if (scale > 0) else e_vec
 
-        if data.edge_attr is not None and self.cat:
+        if (data.edge_attr != None) and self.cat:
             data.edge_attr = data.edge_attr.view(-1, 1).contiguous() if data.edge_attr.dim() == 1 else data.edge_attr
             data.edge_attr = torch.cat([data.edge_attr, e_vec.type_as(data.edge_attr)], dim=-1).contiguous()
         else:
@@ -172,7 +184,11 @@ class Pos2Vec(object):
         return data
 
     def __repr__(self):
-        return '{}(norm={}, scale={}, cat={})'.format(self.__class__.__name__, self.norm, self.scale, self.cat)
+        params_list = [self.norm, self.scale, self.cat,
+                       self.pos_noise.__name__ if self.pos_noise != None else self.pos_noise,
+                       self.noise_args, self.noise_kwargs]
+            
+        return '{}(norm={}, scale={}, cat={}, pos_noise={}, noise_args={}, noise_kwargs={})'.format(self.__class__.__name__,*params_list)
 
 
 class ScaleVar(object):
