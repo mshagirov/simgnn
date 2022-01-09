@@ -1,6 +1,26 @@
 import torch
 
 
+class AddNoise_x(object):
+    '''Generate noise using `pos_noise` func-n and add it to data.x'''
+    def __init__(self, pos_noise, noise_args=[], noise_kwargs={}):
+        self.pos_noise = pos_noise
+        self.noise_args = noise_args
+        self.noise_kwargs = noise_kwargs
+
+    def __call__(self, data):
+        if self.pos_noise != None:
+            data.x = data.x + self.pos_noise(*self.noise_args,
+                                             **self.noise_kwargs,
+                                             size=data.x.size())
+        return data
+
+    def __repr__(self):
+        params_list = [self.pos_noise.__name__ if self.pos_noise != None else None,
+                       self.noise_args, self.noise_kwargs]
+        format_str = '{}(pos_noise={}, noise_args={}, noise_kwargs={})'
+        return format_str.format(self.__class__.__name__, *params_list)
+
 class AppendReversedEdges(object):
     '''
     Appends reversed (src-tgt --> tgt-src) edges to the graph. Optionally, reverses attributes (reverse is negative:
@@ -30,8 +50,9 @@ class AppendReversedEdges(object):
         return data
 
     def __repr__(self):
-        return '{}(reverse_attr={}, reverse_tension={}, edge_id={})'.format(self.__class__.__name__, self.reverse_attr,
-                                                                            self.reverse_tension, self.edge_id)
+        format_str = '{}(reverse_attr={}, reverse_tension={}, edge_id={})'
+        params_list = [self.reverse_attr, self.reverse_tension, self.edge_id]
+        return format_str.format(self.__class__.__name__, *params_list)
 
 
 class AppendEdgeNorm(object):
@@ -142,7 +163,7 @@ class Pos2Vec(object):
         '''
         Arg-s:
         - norm : if True, normalises/scales edge vectors (uses `scale` or maximum
-                 component value if scale==None).
+                 component value if scanoise_args=[], noise_kwargs={}le==None).
         - scale : scalar s.t. `scale>0`, edge vector componets are divided (scaled)
                  by this value.
         - cat : if True, concatenates edge vectors to edge attr-s, otherwise
@@ -187,8 +208,9 @@ class Pos2Vec(object):
         params_list = [self.norm, self.scale, self.cat,
                        self.pos_noise.__name__ if self.pos_noise != None else self.pos_noise,
                        self.noise_args, self.noise_kwargs]
+        format_str = '{}(norm={}, scale={}, cat={}, pos_noise={}, noise_args={}, noise_kwargs={})'
             
-        return '{}(norm={}, scale={}, cat={}, pos_noise={}, noise_args={}, noise_kwargs={})'.format(self.__class__.__name__,*params_list)
+        return format_str.format(self.__class__.__name__, *params_list)
 
 
 class ScaleVar(object):
