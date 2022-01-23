@@ -327,8 +327,11 @@ def predict_dataset(model, input_dataset, device=torch.device('cpu'), concat=Fal
         Vp_k, Tp_k, _ = predict_sample(model, d_k, device=device)
 
         # targets
-        results_['targets']['velocity'].append(d_k.y.cpu().numpy().reshape(1, -1, 2))
-        results_['targets']['tension'].append(d_k.edge_tensions.cpu().numpy().reshape(1, -1))
+        if d_k.y != None:
+            results_['targets']['velocity'].append(d_k.y.cpu().numpy().reshape(1, -1, 2))
+
+        if d_k.edge_tensions != None:
+            results_['targets']['tension'].append(d_k.edge_tensions.cpu().numpy().reshape(1, -1))
 
         # predictions
         results_['predictions']['velocity'].append(Vp_k.cpu().numpy().reshape(1, -1, 2))
@@ -338,8 +341,11 @@ def predict_dataset(model, input_dataset, device=torch.device('cpu'), concat=Fal
             results_['targets']['is_rosette'][k] = d_k.is_rosette
 
     if concat:
-        results_['targets']['velocity'] = np.concatenate(results_['targets']['velocity'], axis=0)
-        results_['targets']['tension'] = np.concatenate(results_['targets']['tension'], axis=0)
+        if len(results_['targets']['velocity']) > 0:
+            results_['targets']['velocity'] = np.concatenate(results_['targets']['velocity'], axis=0)
+        if len(results_['targets']['tension']) > 0:
+            results_['targets']['tension'] = np.concatenate(results_['targets']['tension'], axis=0)
+
         results_['predictions']['velocity'] = np.concatenate(results_['predictions']['velocity'], axis=0)
         results_['predictions']['tension'] = np.concatenate(results_['predictions']['tension'], axis=0)
 
