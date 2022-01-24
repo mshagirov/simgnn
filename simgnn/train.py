@@ -277,7 +277,10 @@ def predict_dataset_tension(model, input_dataset, device=torch.device('cpu')):
         _, Tp_k, _ = predict_sample(model, d_k, device=device)
 
         # targets
-        tens_tgt.append(d_k.edge_tensions.cpu().numpy().reshape(1, -1))
+        if d_k.edge_tensions != None:
+            tens_tgt.append(d_k.edge_tensions.cpu().numpy().reshape(1, -1))
+        else:
+            tens_tgt.append(np.full((1,Tp_k.size(0)), np.nan))
 
         # predictions
         tens_pred.append(Tp_k.to('cpu').numpy().reshape(1, -1))
