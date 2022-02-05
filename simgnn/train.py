@@ -337,8 +337,11 @@ def predict_dataset(model, input_dataset, device=torch.device('cpu'), concat=Fal
             results_['targets']['tension'].append(d_k.edge_tensions.cpu().numpy().reshape(1, -1))
 
         # predictions
-        results_['predictions']['velocity'].append(Vp_k.cpu().numpy().reshape(1, -1, 2))
-        results_['predictions']['tension'].append(Tp_k.cpu().numpy().reshape(1, -1))
+        if Vp_k != None:
+            results_['predictions']['velocity'].append(Vp_k.cpu().numpy().reshape(1, -1, 2))
+        
+        if Tp_k != None:
+            results_['predictions']['tension'].append(Tp_k.cpu().numpy().reshape(1, -1))
 
         if contains_rosette:
             results_['targets']['is_rosette'][k] = d_k.is_rosette
@@ -346,11 +349,15 @@ def predict_dataset(model, input_dataset, device=torch.device('cpu'), concat=Fal
     if concat:
         if len(results_['targets']['velocity']) > 0:
             results_['targets']['velocity'] = np.concatenate(results_['targets']['velocity'], axis=0)
+        
+        if len(results_['predictions']['velocity']) > 0:
+            results_['predictions']['velocity'] = np.concatenate(results_['predictions']['velocity'], axis=0)
+        
         if len(results_['targets']['tension']) > 0:
             results_['targets']['tension'] = np.concatenate(results_['targets']['tension'], axis=0)
-
-        results_['predictions']['velocity'] = np.concatenate(results_['predictions']['velocity'], axis=0)
-        results_['predictions']['tension'] = np.concatenate(results_['predictions']['tension'], axis=0)
+        
+        if len(results_['predictions']['tension']) > 0:
+            results_['predictions']['tension'] = np.concatenate(results_['predictions']['tension'], axis=0)
 
     if is_train_mode:
         model.train()
@@ -450,7 +457,8 @@ def predict_batch(model, data_loaders,
             if return_losses:
                 vel_loss, tens_loss, pres_loss = losses
                 # accumulate losses
-                running_losses[f'{name}_loss_y'] += vel_loss.item() if data.y is not None else 0.0
+                # assumes Loss(reduction='sum')
+                running_losses[f'{name}_loss_y'] += vel_loss.item()/2 if data.y is not None else 0.0
                 n_samples[f'{name}_loss_y'] += data.x.size(0)
 
                 # total loss values weighted by #nodes in each graph batch
