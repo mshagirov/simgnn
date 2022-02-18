@@ -2,7 +2,13 @@ import torch
 
 
 class AddNoise_x(object):
-    '''Generate noise using `pos_noise` func-n and add it to data.x'''
+    '''
+    Generate noise using `pos_noise` func-n and add it to data.x
+    
+    Notes:
+        - `pos_noise` func-n should accept "size=" kwarg, e.g.
+          `pos_noise(...,size=data.x.size())`.
+    '''
     def __init__(self, pos_noise, noise_args=[], noise_kwargs={}):
         self.pos_noise = pos_noise
         self.noise_args = noise_args
@@ -169,7 +175,9 @@ class Pos2Vec(object):
         - cat : if True, concatenates edge vectors to edge attr-s, otherwise
                 replaces current edge attr-s {default : False}.
         - pos_noise : a function for producing an additive position noise (e.g. torch.normal);
-                      must accept "size=" kwarg.
+                      must accept "size=" kwarg. The new noise is sampled at each call of the
+                      `Pos2Vec.__call__()` and added to the edge dir-s in `data.edge_attr`,
+                      the noise is added to scaled dir-s if `norm=True`.
         '''
         self.norm = norm
         self.scale = scale
@@ -185,16 +193,14 @@ class Pos2Vec(object):
         row, col = data.edge_index  # src, tgt indices
         pos = data.pos.detach().clone()
 
-        if self.pos_noise != None:
-            pos = pos + self.pos_noise(*self.noise_args,
-                                       **self.noise_kwargs,
-                                       size=pos.size())
-            
         e_vec = pos[col] - pos[row]  # src to tgt vectors
 
         if self.norm and (e_vec.numel() > 0):
             scale = e_vec.abs().max() if (self.scale is None) else self.scale
             e_vec = e_vec / scale if (scale > 0) else e_vec
+
+        if self.pos_noise != None:
+            e_vec = e_vec + self.pos_noise(*self.noise_args, **self.noise_kwargs, size=e_vec.size())
 
         if (data.edge_attr != None) and self.cat:
             data.edge_attr = data.edge_attr.view(-1, 1).contiguous() if data.edge_attr.dim() == 1 else data.edge_attr
@@ -260,13 +266,22 @@ class TransformVar(object):
 
 
 class ScaleVelocity(ScaleVar):
-    '''Scales velocities (`data.x` and `data.y`) by a given amount : e.g. `data.x = data.x/scale`.'''
-    def __init__(self, scale):
+    '''
+    Scales velocities (`data.x` and `data.y`) by a given amount : e.g. `data.x = data.x/scale`.
+    '''
+    def __init__(self, scale, pos_noise=None, noise_args=[], noise_kwargs={}):
         '''
         Arg-s:
         - scale : a scalar s.t. `scale>0`, `data.x` and `data.y` are divided by `scale`.
+        - pos_noise : a function for producing an additive position noise (e.g. torch.normal);
+                      must accept "size=" kwarg. The noise is sampled and added after scaling
+                      the `data.x` and `data.y` var-s.
         '''
         super(ScaleVelocity, self).__init__(scale)
+        
+        self.pos_noise = pos_noise
+        self.noise_args = noise_args
+        self.noise_kwargs = noise_kwargs
 
     def __call__(self, data):
         '''
@@ -277,6 +292,10 @@ class ScaleVelocity(ScaleVar):
 
         if data.y is not None:
             data.y = data.y/self.scale
+    
+        if self.pos_noise != None:
+            data.x += self.pos_noise(*self.noise_args, **self.noise_kwargs, size=data.x.size())
+            data.y += self.pos_noise(*self.noise_args, **self.noise_kwargs, size=data.y.size())
 
         return data
 

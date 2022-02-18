@@ -4,6 +4,7 @@ import torch
 import pickle
 import matplotlib.pyplot as plt
 import numpy as np
+from os import path
 
 # Default loss functions
 mse_loss = torch.nn.MSELoss(reduction='mean')
@@ -494,23 +495,48 @@ def predict_batch(model, data_loaders,
     return (X_vel_datasets, E_tens_datasets, C_pres_datasets), (X_vel_targets, E_tens_targets, C_pres_targets)
 
 
-def plot_velocity_predictions(vel_pred, vel_tgt, dataset_legend,
-                              figsize=[15, 7]):
-    '''Concatenate all batches and plot scatter plot target vs predicted velocity values'''
-    var_name = r'$\Delta{}x$'
+def plot_velocity_predictions(vel_pred, vel_tgt, dataset_legend, var_name = r'$\Delta{}v$',
+                              xlabel='True', ylabel='Predicted', plot_kw={},
+                              subplots_kw={}, line45_kw={}, show_figs=True,
+                              save_path=None, save_type='png', save_kw={}):
+    '''Concatenate all batches and plot scatter plot target vs predicted velocity values.
+    
+    - plot_kw : plot kwargs, defaults: {'marker':'o', 'ms':7, 'mfc':'tomato', 'alpha':.25}
+    - subplots_kw: kwargs for plt.subplots; defaults: {'nrows':1, 'ncols':2, 'figsize':[15, 7], 'sharex':True, 'sharey':True}.
+    - line45_kw : kwargs for 45-degree line; defaults: {'ls':'--', 'color':'b', 'lw':3, 'alpha':.25}
+    
+    '''
+    # plot kwargs
+    plt_plot_kw = {'ls':'', 'marker':'o', 'ms':5, 'mfc':'tomato', 'mec':'maroon', 'alpha':.25}
+    for k in plot_kw:
+       plt_plot_kw[k] = plot_kw[k]
+
+    # subplots kwargs
+    plt_subplots_kw={'nrows':1, 'ncols':2, 'figsize':[15, 7], 'sharex':True, 'sharey':True}
+    for k in subplots_kw:
+        plt_subplots_kw[k] = subplots_kw[k]
+
+    # 45-degree line kwargs
+    plt_line45_kw  = {'ls':'--', 'color':'b', 'lw':2, 'alpha':.5}
+    for k in line45_kw:
+        plt_line45_kw[k] = line45_kw[k]  # overwrite defaults
+
     data_names = [e for e in vel_tgt if len(vel_tgt[e]) > 1]
     for data_name in data_names:
         minY, maxY = torch.cat(vel_tgt[data_name], dim=0).min(), torch.cat(vel_tgt[data_name], dim=0).max()
-        fig, axs = plt.subplots(nrows=1, ncols=2, sharex=True, sharey=True, figsize=figsize)
+        fig, axs = plt.subplots(**plt_subplots_kw)
         for k, ax in enumerate(axs):
             ax.plot(torch.cat(vel_tgt[data_name], dim=0)[:, k],
-                    torch.cat(vel_pred[data_name], dim=0)[:, k], 'o', ms=10, mfc='tomato', alpha=.25)
-            ax.plot([minY, maxY], [minY, maxY], '--', color='b', lw=3, alpha=.25)
-            ax.set_xlabel('True')
-            ax.set_ylabel('Predicted')
+                    torch.cat(vel_pred[data_name], dim=0)[:, k], **plt_plot_kw)
+            ax.plot([minY, maxY], [minY, maxY], **plt_line45_kw)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
             ax.set_title(f'{var_name}$_{k}$')
         plt.suptitle(f'{dataset_legend[data_name]}')
-        plt.show()
+        if save_path!=None:
+            plt.savefig(path.join(save_path, data_name+'.'+save_type), **save_kw)
+        if show_figs:
+            plt.show()
 
 
 def plot_tension_prediction(t_pred, t_tgt, dataset_legend,
