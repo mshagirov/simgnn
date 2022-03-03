@@ -534,7 +534,7 @@ def plot_velocity_predictions(vel_pred, vel_tgt, dataset_legend, var_name = r'$\
             ax.set_title(f'{var_name}$_{k}$')
         plt.suptitle(f'{dataset_legend[data_name]}')
         if save_path!=None:
-            plt.savefig(path.join(save_path, data_name+'.'+save_type), **save_kw)
+            plt.savefig(save_path+data_name+'.'+save_type, **save_kw)
         if show_figs:
             plt.show()
 
