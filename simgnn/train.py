@@ -496,16 +496,20 @@ def predict_batch(model, data_loaders,
 
 
 def plot_velocity_predictions(vel_pred, vel_tgt, dataset_legend, var_name = r'$\Delta{}v$',
-                              xlabel='True', ylabel='Predicted', plot_kw={},
+                              xlabel='True', ylabel='Predicted', plot_kw={}, axis_lims=None, n_points=1000, rng_seed=None,
                               subplots_kw={}, line45_kw={}, show_figs=True,
                               save_path=None, save_type='png', save_kw={}):
     '''Concatenate all batches and plot scatter plot target vs predicted velocity values.
     
     - plot_kw : plot kwargs, defaults: {'marker':'o', 'ms':7, 'mfc':'tomato', 'alpha':.25}
+    - axis_lims : axis limits [min_x, max_x, min_y, max_y]. Default: [minY, maxY, minY, maxY].
+    - n_points, rng_seed : number of random example points to plot, and corresponding numpy RNG seed (default: 42). 
     - subplots_kw: kwargs for plt.subplots; defaults: {'nrows':1, 'ncols':2, 'figsize':[15, 7], 'sharex':True, 'sharey':True}.
     - line45_kw : kwargs for 45-degree line; defaults: {'ls':'--', 'color':'b', 'lw':3, 'alpha':.25}
     
     '''
+    if n_points!=None:
+        rng = np.random.default_rng(rng_seed if rng_seed!=None else 42)
     # plot kwargs
     plt_plot_kw = {'ls':'', 'marker':'o', 'ms':5, 'mfc':'tomato', 'mec':'maroon', 'alpha':.25}
     for k in plot_kw:
@@ -526,9 +530,22 @@ def plot_velocity_predictions(vel_pred, vel_tgt, dataset_legend, var_name = r'$\
         minY, maxY = torch.cat(vel_tgt[data_name], dim=0).min(), torch.cat(vel_tgt[data_name], dim=0).max()
         fig, axs = plt.subplots(**plt_subplots_kw)
         for k, ax in enumerate(axs):
-            ax.plot(torch.cat(vel_tgt[data_name], dim=0)[:, k],
-                    torch.cat(vel_pred[data_name], dim=0)[:, k], **plt_plot_kw)
-            ax.plot([minY, maxY], [minY, maxY], **plt_line45_kw)
+            y_true = torch.cat(vel_tgt[data_name], dim=0)[:, k]
+            y_pred = torch.cat(vel_pred[data_name], dim=0)[:, k]
+            if n_points!=None:
+                N_avail = min([n_points, y_true.size(0)])
+                v_ids = rng.choice(y_true.size(0), size=(N_avail,), replace=False)
+                y_true = y_true[v_ids]
+                y_pred = y_pred[v_ids]
+                
+            ax.plot(y_true, y_pred, **plt_plot_kw)
+            
+            if axis_lims != None:
+                ax.plot(axis_lims[:2], axis_lims[2:], **plt_line45_kw)
+                ax.axis(axis_lims)
+            else:
+                ax.plot([minY, maxY], [minY, maxY], **plt_line45_kw)
+                ax.axis([minY, maxY, minY, maxY])
             ax.set_xlabel(xlabel)
             ax.set_ylabel(ylabel)
             ax.set_title(f'{var_name}$_{k}$')
