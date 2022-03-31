@@ -511,7 +511,7 @@ def plot_velocity_predictions(vel_pred, vel_tgt, dataset_legend, var_name = r'$\
     if n_points!=None:
         rng = np.random.default_rng(rng_seed if rng_seed!=None else 42)
     # plot kwargs
-    plt_plot_kw = {'ls':'', 'marker':'o', 'ms':5, 'mfc':'tomato', 'mec':'maroon', 'alpha':.25}
+    plt_plot_kw = {'ls':'', 'marker':'o', 'ms':3, 'mfc':'tomato', 'mec':'maroon', 'alpha':.25}
     for k in plot_kw:
        plt_plot_kw[k] = plot_kw[k]
 
