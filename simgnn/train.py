@@ -556,29 +556,58 @@ def plot_velocity_predictions(vel_pred, vel_tgt, dataset_legend, var_name = r'$\
             plt.show()
 
 
-def plot_tension_prediction(t_pred, t_tgt, dataset_legend,
-                            nrows=1, ncols=3, figsize=[23, 7], return_axs=True):
+def plot_tension_prediction(t_pred, t_tgt, dataset_legend, var_name = r'$T$',
+                            xlabel='True', ylabel='Predicted', plot_kw={}, axis_lims=None, n_points=1000, rng_seed=None,
+                            figure_kw={}, line45_kw={}, show_figs=True,
+                            save_path=None, save_type='png', save_kw={}):
     '''Concatenate all batches and plot scatter plot target vs predicted tension values'''
+    if n_points!=None:
+        rng = np.random.default_rng(rng_seed if rng_seed!=None else 42)
+    # plot kwargs
+    plt_plot_kw = {'ls':'', 'marker':'o', 'ms':3, 'mfc':'b', 'mec':'teal', 'alpha':.25}
+    for k in plot_kw:
+       plt_plot_kw[k] = plot_kw[k]
+    # subplots kwargs
+    plt_figure_kw={'figsize':[7, 7]}
+    for k in figure_kw:
+        plt_figure_kw[k] = figure_kw[k]
+    # 45-degree line kwargs
+    plt_line45_kw  = {'ls':'--', 'color':'orange', 'lw':2, 'alpha':.5}
+    for k in line45_kw:
+        plt_line45_kw[k] = line45_kw[k]  # overwrite defaults
+    
     data_names = [e for e in t_tgt if len(t_tgt[e]) > 1]
-    fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize)
-    axs = axs.ravel()
-    for data_name, ax in zip(data_names, axs):
+    
+    for data_name in data_names:
+        fig = plt.figure(**plt_figure_kw)
+        
         t_tgt_i = torch.cat(t_tgt[data_name], dim=0)
         t_mask = torch.logical_not(t_tgt_i.isnan())
+        T_true  = t_tgt_i[t_mask]        
+        T_pred = torch.cat(t_pred[data_name], dim=0)[t_mask]
+        
+        minY, maxY = T_true.min(), T_true.max()
+        
+        if n_points!=None:
+            N_avail = min([n_points, T_true.size(0)])
+            v_ids = rng.choice(T_true.size(0), size=(N_avail,), replace=False)
+            T_true = T_true[v_ids]
+            T_pred = T_pred[v_ids]
 
-        minY, maxY = t_tgt_i[t_mask].min(), t_tgt_i[t_mask].max()
+        plt.plot(T_true, T_pred, **plt_plot_kw)
+        
+        if axis_lims != None:
+                plt.plot([minY, maxY], [minY, maxY], **plt_line45_kw)
+                plt.axis(axis_lims)
+        else:
+            plt.plot([minY, maxY], [minY, maxY], **plt_line45_kw)
+            plt.axis([minY, maxY, minY, maxY])
 
-        ax.plot(t_tgt_i[t_mask],
-                torch.cat(t_pred[data_name], dim=0)[t_mask], 'o',
-                ms=10, mfc='darkorange', alpha=.25)
-        ax.plot([minY, maxY], [minY, maxY], '--', color='teal', lw=3, alpha=.5)
-
-        ax.set_xlabel('True')
-        ax.set_ylabel('Predicted')
-        if ax is not axs[0]:
-            ax.sharey(axs[0])
-        ax.set_title(f'{dataset_legend[data_name]}')
-    plt.suptitle('Tension')
-    if return_axs:
-        return axs
-    plt.show()
+        plt.xlabel(xlabel)
+        plt.ylabel(ylabel)
+        if dataset_legend!=None:
+            plt.title(f'{dataset_legend[data_name]}')
+        if save_path!=None:
+            plt.savefig(save_path+data_name+'.'+save_type, **save_kw)
+        if show_figs:
+            plt.show()
