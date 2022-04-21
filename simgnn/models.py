@@ -5,6 +5,48 @@ from simgnn.nn import dims_to_dict, mlp, SelectiveLayer, Residual, SequentialUpd
 from simgnn.nn import IndependentBlock, MessageBlock, Encode_Process_Decode_ptgraph
 from simgnn.nn import DiffMessage, DiffMessageSquared, AggregateUpdate
 
+from collections import OrderedDict
+
+
+def get_simple_gnn(n_blocks=3, dropout_p=0.1, device=torch.device('cpu'), is_residual=True,
+                  input_dims=None,  output_dims=None):
+    '''
+    latent_layer_n
+    '''    
+    # dropout for hidden layers & GN blocks (if any)
+    latent_dims = 128
+    latent_layer_n = 2
+    
+    if input_dims==None:
+        input_dims = OrderedDict([('node', 10), ('edge', 2)]) # node_features, edge_features
+    if output_dims==None:
+        output_dims = OrderedDict([('node', 2), ('edge', 1)]) # velocity:(Nv,2), tensions:(Ne,1)
+    
+
+    encoder_kwrgs    = {'hidden_dims':[128, 128],
+                        'dropout_p': dropout_p, # dropout for hidden layers (if any)
+                       }
+
+    processor_kwargs = {'n_blocks': n_blocks,
+                        'block_type': 'message',
+                        'is_residual': is_residual,
+                        'seq': 'n', # 'n', 'e', 'p'
+                        'norm_type': 'ln', # 'ln' or 'bn'
+                        'block_p': dropout_p,  # block dropout (last layer)
+                        'dropout_p': dropout_p, # dropout for hidden layers (if any)
+                        'hidden_dims':[latent_dims for n in range(latent_layer_n)]
+                       }
+
+    decoder_kwargs   = {'hidden_dims':[128, 128, 16],
+                        'dropout_p': dropout_p, # dropout for hidden layers (if any)
+                       }
+
+    net = construct_simple_gnn(input_dims, latent_dims, output_dims,
+                               encoder_kwrgs=encoder_kwrgs,
+                               processor_kwargs=processor_kwargs, 
+                               decoder_kwargs=decoder_kwargs).to(device)
+    return net
+
 
 def construct_simple_gnn(input_dims, latent_dims, output_dims,
                          encoder_kwrgs={}, processor_kwargs={}, decoder_kwargs={}):

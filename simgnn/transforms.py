@@ -84,7 +84,7 @@ class AppendEdgeNorm(object):
 
 class AppendDiff_x(object):
     '''
-    Appends x_t-x_s and their Euclidean norms (optional, if `norm=True`).
+    Appends "x_t-x_s" and their Euclidean norms (optional, if `norm=True`) to `data.edge_attr`.
     '''
     def __init__(self, norm=True):
         '''Appends Euclidean if `norm=True`'''
