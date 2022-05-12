@@ -5,6 +5,7 @@ import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 from os import path
+from inspect import signature
 
 # Default loss functions
 mse_loss = torch.nn.MSELoss(reduction='mean')
@@ -174,12 +175,15 @@ def train_model(model,
                 best_loss = train_log['val_loss_tot'][-1]
                 if return_best:
                     best_wts = copy.deepcopy(model.state_dict())  # best weights
+            
+             # apply LR schedule
+            if (state == 'val') and (scheduler is not None):
+                if 'metrics' in signature(scheduler.step).parameters:
+                    scheduler.step(train_log['val_loss_tot'][-1])
+                else:
+                    scheduler.step()
 
         print(f'{time.time() - time_start:.0f}s')
-
-        # apply LR schedule
-        if scheduler is not None:
-            scheduler.step()
 
     time_elapsed = time.time() - time_start
     print(f'Total elapsed time : {time_elapsed//60:.0f}m {time_elapsed % 60:.0f}s')
