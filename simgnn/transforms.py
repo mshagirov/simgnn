@@ -1,6 +1,64 @@
 import torch
 
 
+class AddPosNoise(object):
+    '''
+    Generate and add noise to a random fraction of nodes. Adds noise to the node
+    features (data.x) and positions (data.pos). Noise is generated using `pos_noise`
+    func-n at each call of the transform's `__call__` method. The original positions
+    before noise corruption are saved in `data.pos_original`.
+    
+    DISABLE NOISE IN the other transforms when using `AddPosNoise`, as `AddPosNoise` adds positional noise 
+    independently from the other transforms. If not disable, you might unknowingly corrupt the var-s in the graph.
+    
+    Notes:
+        - `pos_noise` func-n should accept "size=" kwarg, e.g.
+          `pos_noise(...,size=data.x.size())`.
+        - `frac` : fraction of the nodes to be augmented. `frac` should be in the range [0.0, 1.0],
+                   where 0.0 and 1.0 refers to 0% and 100% of the nodes respectively.
+        - coeff : dict or a float of multiplier coefficients (scales) for `x` and `pos` variable noise. Use float
+                  (e.g. `coeff=1.0`) to set both coefficients to be the same value.
+        If `pos` is not normalised, for instance, it requires a different multiplier (e.g. average edge length)
+        for its noise to be of the same scale as the `x` noise. You can set `coeffs={'x':1.0, 'pos':1.0}` if
+        normalisation is done after this transform (e.g. in `Pos2Vec` and `ScaleVelocity`). 
+    '''
+    def __init__(self, pos_noise, frac=1.0, coeffs=1.0, noise_args=[], noise_kwargs={}):
+        assert (frac<=1.0) and (frac>=0.0)
+        self.frac = frac # fraction of the nodes to be augmented
+        if isinstance(coeffs, dict):
+            self.c_x = coeffs['x'] if 'x' in coeffs else 1.0
+            self.c_p = coeffs['pos'] if 'pos' in coeffs else 1.0
+        else:
+            assert isinstance(coeffs, float)
+            self.c_x, self.c_p = coeffs, coeffs
+        self.coeffs = {'x': self.c_x, 'pos': self.c_p}
+        
+        self.pos_noise = pos_noise
+        self.noise_args = noise_args
+        self.noise_kwargs = noise_kwargs
+
+    def __call__(self, data):
+        if self.pos_noise != None:
+            mask = torch.rand((data.x.size(0),)) < self.frac
+            mask_x = mask.reshape(-1, *[1 for k in range(data.x.ndim-1)])
+            data.x = data.x + self.c_x*mask_x*self.pos_noise(*self.noise_args,
+                                                             **self.noise_kwargs,
+                                                             size=data.x.size())
+            
+            data.pos_original = data.pos.detach().clone()
+            mask_p = mask.reshape(-1, *[1 for k in range(data.pos.ndim-1)])
+            data.pos = data.pos + self.c_p*mask_p*self.pos_noise(*self.noise_args, **self.noise_kwargs,
+                                                               size=data.pos.size())
+        return data
+
+    def __repr__(self):
+        params_list = [self.pos_noise.__name__ if self.pos_noise != None else None,
+                       self.frac, self.coeffs,
+                       self.noise_args, self.noise_kwargs]
+        format_str = '{}({}, frac={}, coeffs={}, noise_args={}, noise_kwargs={})'
+        return format_str.format(self.__class__.__name__, *params_list)
+
+
 class AddNoise_x(object):
     '''
     Generate noise using `pos_noise` func-n and add it to data.x
