@@ -392,8 +392,8 @@ def predict(model, input_data, loss_func=l1_loss,
     '''
     Arg-s: model, input_data, loss_func, device
     Returns: outputs, losses
-    - outputs : tuple (X_vel, E_tens)
-    - losses : tuple (vel_loss, tens_loss) {optional : return_losses=True}
+    - outputs : model outputs, e.g. (X_vel, E_tens, C_pres)
+    - losses : losses for model outputs, e.g. (vel_loss, tens_loss) {optional : return_losses=True}
     '''
     input_data = input_data.to(device)
     model.eval()  # evaluation mode
@@ -401,7 +401,7 @@ def predict(model, input_data, loss_func=l1_loss,
     X_vel, E_tens, C_pres = model(input_data)  # shapes: (#nodes/#edges/#cells, #dims)
 
     if not return_losses:
-        return (X_vel, E_tens), None
+        return (X_vel, E_tens, C_pres), None
 
     vel_loss = loss_func(X_vel, input_data.y) if input_data.y is not None else 0.0
 
@@ -446,6 +446,8 @@ def predict_batch(model, data_loaders,
             outputs, losses = predict(model, data, loss_func=loss_func,
                                       use_force_loss=use_force_loss[name],
                                       return_losses=return_losses, device=device)
+            # losses==None if return_losses is True
+            
             X_vel_datasets[name].append(outputs[0].cpu())
             if data.y is not None:
                 X_vel_targets[name].append(data.y.cpu())
