@@ -11,9 +11,8 @@
     - [ ] posenc no diffX or norms (ablation tests)
     
 ---
-## GNN Building Blocks (`nn.Module`) for Message Passing 🧱 
-
-**Node-to-Cell Encoding/Pooling Layer**:
+## Node-to-Cell Encoding/Pooling Layer 🧱 
+> This type GNN layers are not yet used but can be implemented using message passing method as shown below
 1. Initiate node-to-cell edge attr-s as (source) node attr-s `x[node2cell_index[0]]`.
 1. Compute node-to-cell edge attr-s using MLP: `e_n2c = MLP( x[node2cell_index[0]] )`
 1. Aggregate node-to-cell edge attr-s as cell attr-s : `x_cell = Aggregate(e_n2c)`
@@ -33,10 +32,8 @@ h_cell = cell_enc(x_cell)
 ## Future Work 🔮 
 - Model architecture:
     - add *Cell layer* processor
-- Rollout error (tension, position/velocity)
-    - rollout vs 1-step losses
-    - train for single step with velocity noise (Brownian noise: Sanchez-Gonzalez, *et al.* \[ASG2020\])
-    - train for rollout (multi-step loss)
-    - convert vel-y error to **position error**, e.g. "speed"+"direction"(angle/dot product etc.)
-- compare MLP vs CONV layers for message passing.
-- try with dynamic graphs (construct graphs on the fly based on relative positions, and use cell edges and cell attrib only for queries on `Y_edge`, `Y_cell`).
+    - compare MLP to CONV layers for message passing.
+    - dynamic graphs based on relative positions, and use cell edges and cell attrib only for queries on `Y_edge`, `Y_cell`.
+- Noise and Loss
+    - rollout vs 1-step losses, and multi-step loss.
+    - Brownian noise for velocity (e.g., Sanchez-Gonzalez, *et al.* \[ASG2020\])
