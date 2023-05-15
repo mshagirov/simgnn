@@ -1,12 +1,3 @@
-# Graph Neural Networks for Vertex Dynamics Simulations and Parameter Inference
+# Inferring Dynamic Tissue Forces using Sim2real
 ---
-
-
-Tasks:
-- Edit nb 4B:T_sim2real w/ posenc
-    - implement x_e w/ posenc
-    - test simple GNN training and pred for T
-    - devise experiments to explore posenc
-    - test removing norms in diffX (no posenc)
-    - posenc with suitable diffX
-    - posenc no diffX or norms (ablation tests)
+> Building and testing Graph Neural Network (GNN) models for inferring tissue forces from microscopy movies using simulation-to-real transfer (sim2real).
