@@ -1,4 +1,5 @@
 from os import path, listdir
+from shutil import rmtree
 
 import torch
 import numpy as np
@@ -25,6 +26,24 @@ def persistence_loss(graph_dataset):
     persistence_mae = np.mean(np.abs(dx_T0.numpy()))
     persistence_mse = np.mean(dx_T0.numpy()**2)
     return {'mae': persistence_mae, 'mse': persistence_mse}
+
+
+def clear_processed(data_paths):
+    '''
+    Deletes folder if it is named `processed`, or otherwise ignores it.
+    
+    data_paths: PosixPath or a list of PosixPath objects for folder locations to delete
+                if they are named `processed`.
+                E.g., use  pathlib.Path(str) to create and work with the PosixPath objects.
+    '''
+    if type(data_paths) != list:
+        data_paths = [data_paths]
+    for dset in data_paths:
+        if dset.exists() and (dset.name=='processed'):
+            print('Clearing: ',str(dset))
+            rmtree(dset)
+        else:
+            print('Skipping: ',str(dset), f'{"" if dset.exists() else "(does not exist)"}')
 
 
 class CellData(Data):
