@@ -28,7 +28,7 @@ def persistence_loss(graph_dataset):
     return {'mae': persistence_mae, 'mse': persistence_mse}
 
 
-def clear_processed(data_paths):
+def clear_processed(data_paths, verbose=False):
     '''
     Deletes folder if it is named `processed`, or otherwise ignores it.
     
@@ -40,9 +40,10 @@ def clear_processed(data_paths):
         data_paths = [data_paths]
     for dset in data_paths:
         if dset.exists() and (dset.name=='processed'):
-            print('Clearing: ',str(dset))
+            if verbose:
+                print('Clearing: ',str(dset))
             rmtree(dset)
-        else:
+        elif verbose:
             print('Skipping: ',str(dset), f'{"" if dset.exists() else "(does not exist)"}')
 
 
