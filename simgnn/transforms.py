@@ -1,4 +1,45 @@
 import torch
+import math
+
+class PosEnc(object):
+    '''
+    Positional encoding using Fourier features
+    
+    Uses Fourier or sinusoid feature mapping with scale `b` and geometric sequence of frequencies for the features.
+    
+    Scale is dataset- and task-dependent and must be chosen with a hyperparameter sweep. This transformation assumes 
+    that inputs are normalised and 1-dimensional (for MLP-like models). For multidimensional input features, the
+    transformation produces features with 2 x m x n features for the last dimension (n=number of input features along
+    dim=-1, and 2*m=number of sinusoids per input feature).
+    
+    References:
+    - Positional encoding in "Attention Is All You Need", Vaswani et al.
+    - General form in "Fourier Features Let Networks Learn High Frequency Functions in Low Dimensional Domains", Tancik et al.
+    '''
+    def __init__(self, b=2.0, m=4):
+        '''
+        b : scale of the frequency (maximum frequency; base of the exponent)
+        m : number of frequencies (total number of features = 2 x m x n, where n = number of original features)
+        '''
+        self.b = b
+        self.m = m
+        self.nu = 2*math.pi*torch.exp(torch.arange(0, m)*math.log(b) / (m-1)) # frequencies*2*pi
+
+    def __call__(self, data):
+        # transform node features
+        data.x = torch.cat( [ 
+            torch.cat( (torch.sin(v_i * data.x), torch.cos(v_i * data.x)), dim=-1)
+            for v_i in self.nu], dim=-1 ).contiguous()
+
+        # transform edge features
+        data.edge_attr = torch.cat( [ 
+            torch.cat( (torch.sin(v_i * data.edge_attr), torch.cos(v_i * data.edge_attr)), dim=-1)
+            for v_i in self.nu], dim=-1 ).contiguous()
+        
+        return data
+
+    def __repr__(self):
+        return '{}(b={}, m={})'.format(self.__class__.__name__, self.b, self.m)
 
 
 class AddPosNoise(object):
