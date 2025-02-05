@@ -1,10 +1,50 @@
 # Notes
 ---
 
+## Updates ‼️
+### Issues due to addition of kwargs and args in PyG v2.6.1
+
+Test batching with Python's next and iter func-s.
+
+```python
+batch = next(iter(loaders['val']))
+batch
+```
+
+Changes on `simgnn.datasets.CellData` to fix the issue.
+
+```shell
+diff --git a/simgnn/datasets.py b/simgnn/datasets.py
+index b30d127..f48d5aa 100644
+--- a/simgnn/datasets.py
++++ b/simgnn/datasets.py
+@@ -73,7 +73,7 @@ class CellData(Data):
+     def num_cells(self, val):
+         self.__num_cells__ = val
+ 
+-    def __inc__(self, key, value):
++    def __inc__(self, key, value,*args,**kwargs):
+         if key == 'node2cell_index':
+             return torch.tensor([[self.num_nodes], [self.num_cells]])
+         if key == 'cell2node_index':
+@@ -81,13 +81,13 @@ class CellData(Data):
+         if key == 'edge_id':
+             return torch.unique(self.edge_id).size(0)
+         else:
+-            return super(CellData, self).__inc__(key, value)
++            return super(CellData, self).__inc__(key, value,*args,**kwargs)
+ 
+-    def __cat_dim__(self, key, value):
++    def __cat_dim__(self, key, value,*args,**kwargs):
+         if key == 'node2cell_index' or key == 'cell2node_index':
+             return -1
+         else:
+-            return super(CellData, self).__cat_dim__(key, value)
++            return super(CellData, self).__cat_dim__(key, value,*args,**kwargs)
+```
+
 ## Tasks 👷 🚧 
 - Edit nb 4: positional encoding for tension GNN
-    - [ ] implement x_e w/ posenc
-    - [ ] test simple GNN training and pred for T
     - [ ] devise experiments to explore posenc
     - [ ] test removing norms in diffX (no posenc)
     - [ ] posenc with suitable diffX
