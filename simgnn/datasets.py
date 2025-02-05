@@ -73,7 +73,7 @@ class CellData(Data):
     def num_cells(self, val):
         self.__num_cells__ = val
 
-    def __inc__(self, key, value):
+    def __inc__(self, key, value,*args,**kwargs):
         if key == 'node2cell_index':
             return torch.tensor([[self.num_nodes], [self.num_cells]])
         if key == 'cell2node_index':
@@ -81,13 +81,13 @@ class CellData(Data):
         if key == 'edge_id':
             return torch.unique(self.edge_id).size(0)
         else:
-            return super(CellData, self).__inc__(key, value)
+            return super(CellData, self).__inc__(key, value,*args,**kwargs)
 
-    def __cat_dim__(self, key, value):
+    def __cat_dim__(self, key, value,*args,**kwargs):
         if key == 'node2cell_index' or key == 'cell2node_index':
             return -1
         else:
-            return super(CellData, self).__cat_dim__(key, value)
+            return super(CellData, self).__cat_dim__(key, value,*args,**kwargs)
 
 
 class VertexDynamics(Dataset):
